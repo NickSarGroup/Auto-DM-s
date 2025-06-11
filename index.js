@@ -1,6 +1,4 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
-
 const app = express();
 app.use(express.json());
 
@@ -9,7 +7,12 @@ const PORT = process.env.PORT || 3000;
 // Очередь задач
 const queue = [];
 
-// Функция обработки очереди
+// Фейковая функция отправки (заглушка вместо Puppeteer)
+async function sendDM(username, message) {
+  console.log(`Pretending to send message to ${username}: ${message}`);
+  await new Promise(res => setTimeout(res, 1000));
+}
+
 async function processQueue() {
   if (queue.length === 0) {
     setTimeout(processQueue, 1000);
@@ -18,20 +21,14 @@ async function processQueue() {
 
   const task = queue.shift();
   try {
-    console.log(`Start sending to ${task.username}`);
+    console.log(`Sending to ${task.username}`);
     await sendDM(task.username, task.message);
-    console.log(`Message sent to ${task.username}`);
+    console.log(`Done with ${task.username}`);
   } catch (err) {
-    console.error(`Error sending to ${task.username}:`, err);
+    console.error('Error sending to', task.username, err);
   }
 
   setTimeout(processQueue, 1000);
-}
-
-// Функция "отправки" сообщения (заглушка)
-async function sendDM(username, message) {
-  console.log(`Pretending to send message to ${username}: ${message}`);
-  await new Promise(res => setTimeout(res, 2000));
 }
 
 app.post('/send-message', (req, res) => {
@@ -41,12 +38,15 @@ app.post('/send-message', (req, res) => {
   }
 
   queue.push({ username, message });
-  console.log(`Queued message for ${username}`);
+  console.log(`Queued: ${username}`);
+  res.json({ status: 'queued' });
+});
 
-  res.status(200).json({ status: 'queued' });
+app.get('/', (req, res) => {
+  res.send('DM API is running.');
 });
 
 app.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
+  console.log(`Server started on ${PORT}`);
   processQueue();
 });
