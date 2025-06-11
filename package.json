@@ -1,17 +1,13 @@
 {
   "name": "insta-dm-bot",
   "version": "1.0.0",
-  "description": "Auto DMs to Instagram users",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
-  },
-  "engines": {
-    "node": "18.x"
+    "start": "node index.js",
+    "postinstall": "puppeteer install"
   },
   "dependencies": {
-    "chrome-aws-lambda": "^10.1.0",
     "express": "^4.18.2",
-    "puppeteer-core": "^21.3.8"
+    "puppeteer": "^21.3.8"
   }
 }
