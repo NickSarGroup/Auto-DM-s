@@ -1,5 +1,5 @@
 {
-  "name": "puppeteer-instagram-sender",
+  "name": "insta-dm-bot",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
