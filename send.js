@@ -9,19 +9,16 @@ const sendMessage = async (username, message) => {
 
   const page = await browser.newPage();
 
-  // 👇 Отлавливаем все ошибки в консоли браузера и в окне страницы
-  page.on('error', err => {
-    console.error('🔥 Page crashed:', err);
-  });
-
-  page.on('pageerror', pageErr => {
-    console.error('🔥 Page error:', pageErr);
-  });
-
+  // 🔥 Ловим ВСЕ возможные ошибки
+  page.on('error', err => console.error('[Page crash]', err));
+  page.on('pageerror', err => console.error('[Page error]', err));
   page.on('console', msg => {
     if (msg.type() === 'error') {
-      console.error('🔥 Console error:', msg.text());
+      console.error('[Console error]', msg.text());
     }
+  });
+  browser.on('disconnected', () => {
+    console.error('[Browser disconnected]');
   });
 
   try {
@@ -30,24 +27,25 @@ const sendMessage = async (username, message) => {
     try {
       await page.waitForSelector('svg[aria-label="Direct"]', { timeout: 10000 });
     } catch {
-      console.log('🔑 Не авторизован. Войдите вручную.');
+      console.log('🔐 Вход не выполнен. Войдите вручную и дождитесь иконки Direct.');
       await page.waitForSelector('svg[aria-label="Direct"]', { timeout: 120000 });
     }
 
     await page.goto('https://www.instagram.com/direct/inbox/', { waitUntil: 'networkidle2' });
-    await page.waitForTimeout(3000);
-
-    await page.click('svg[aria-label="New message"]');
     await page.waitForTimeout(2000);
 
+    await page.click('svg[aria-label="New message"]');
+    await page.waitForTimeout(1000);
+
     await page.type('input[name="queryBox"]', username, { delay: 100 });
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(2000);
 
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
+    await page.waitForTimeout(1000);
 
     await page.click('div[role="dialog"] button[type="button"]:not([disabled])');
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(2000);
 
     await page.type('textarea', message, { delay: 50 });
     await page.keyboard.press('Enter');
@@ -55,21 +53,21 @@ const sendMessage = async (username, message) => {
     console.log(`✅ Сообщение отправлено @${username}`);
     await browser.close();
   } catch (err) {
-    console.error('❌ Основная ошибка:', err);
+    console.error('❌ Ошибка в процессе:', err);
     await browser.close();
   }
 };
 
-// Обработка необработанных ошибок
-process.on('unhandledRejection', (reason) => {
-  console.error('🧨 Unhandled Rejection:', reason);
+// 👇 Ловим ВСЕ необработанные ошибки (включая WebSocket и Chromium low-level)
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 Unhandled Rejection:', reason);
 });
 
 process.on('uncaughtException', (err) => {
   console.error('💥 Uncaught Exception:', err);
 });
 
-// Чтение аргументов
+// Аргументы
 const [, , username, ...msgParts] = process.argv;
 const message = msgParts.join(' ');
 
