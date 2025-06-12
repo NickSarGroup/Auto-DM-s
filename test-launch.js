@@ -1,28 +1,29 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
-const path = require('path');
-
-const username = 'nicksmartposter';
-const cookiesPath = path.join(__dirname, 'cookies', `${username}.json`);
 
 (async () => {
-  const browser = await puppeteer.launch({
-    headless: false,
-    defaultViewport: null,
-    args: ['--start-maximized'],
-  });
+  try {
+    const cookiesPath = './cookies/nicksmartposter.json'; // путь до сохранённых куков
+    const browser = await puppeteer.launch({
+      headless: false,
+      defaultViewport: null,
+      args: ['--start-maximized'],
+    });
+    const page = await browser.newPage();
 
-  const page = await browser.newPage();
+    if (fs.existsSync(cookiesPath)) {
+      const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf-8'));
+      await page.setCookie(...cookies);
+      console.log('✅ Cookies загружены.');
+    } else {
+      console.log('❌ Файл cookies не найден.');
+    }
 
-  if (fs.existsSync(cookiesPath)) {
-    const cookies = JSON.parse(fs.readFileSync(cookiesPath));
-    await page.setCookie(...cookies);
-    console.log('✅ Куки загружены');
-  } else {
-    console.log('❌ Куки не найдены');
+    await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2' });
+    console.log('✅ Instagram открыт с куками');
+
+    // НЕ закрываем браузер, чтобы ты видел результат
+  } catch (err) {
+    console.error('❌ Ошибка запуска:', err);
   }
-
-  await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2' });
-
-  // Оставляем окно открытым
 })();
