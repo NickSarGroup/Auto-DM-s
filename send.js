@@ -74,4 +74,6 @@ if (!username || !message) {
   process.exit(1);
 }
 
-sendMessage(username, message);
+sendMessage(username, message).catch((err) => {
+  console.error('❌ Общая ошибка выполнения:', err);
+});
