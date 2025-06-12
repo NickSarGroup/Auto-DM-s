@@ -1,52 +1,71 @@
 const puppeteer = require('puppeteer');
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('🔥 [unhandledRejection]', reason);
-});
-process.on('uncaughtException', (err) => {
-  console.error('🔥 [uncaughtException]', err);
-});
-
 (async () => {
-  const username = process.argv[2];
-  const message = process.argv[3];
-
-  if (!username || !message) {
-    console.error('❌ Использование: node send.js <username> <message>');
-    process.exit(1);
-  }
-
   try {
-    const browser = await puppeteer.launch({
-      headless: false,
-      defaultViewport: null,
-      args: ['--start-maximized'],
-    });
+    const usernameToDM = process.argv[2];
+    const message = process.argv[3];
 
+    if (!usernameToDM || !message) {
+      console.error("❌ Usage: node send.js <username> \"<message>\"");
+      process.exit(1);
+    }
+
+    // Вставь сюда свои данные для входа
+    const IG_LOGIN = 'твоя_почта_или_логин_инсты';
+    const IG_PASSWORD = 'твой_пароль';
+
+    const browser = await puppeteer.launch({ headless: false, slowMo: 50 });
     const page = await browser.newPage();
+    await page.setViewport({ width: 1200, height: 800 });
 
-    await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2' });
+    console.log("🟡 Открываю Instagram и пытаюсь залогиниться...");
+    await page.goto('https://www.instagram.com/accounts/login/', { waitUntil: 'networkidle2' });
 
-    // Ждём авторизации вручную
-    console.log('🔐 Войди в Instagram вручную и нажми ENTER...');
-    process.stdin.resume();
-    await new Promise(resolve => process.stdin.once('data', resolve));
+    // Ждем загрузки полей логина
+    await page.waitForSelector('input[name="username"]', { timeout: 10000 });
 
-    // Переход к нужному пользователю
-    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
+    // Вводим логин и пароль
+    await page.type('input[name="username"]', IG_LOGIN, { delay: 100 });
+    await page.type('input[name="password"]', IG_PASSWORD, { delay: 100 });
 
-    // Нажимаем "Message"
-    await page.waitForSelector('text/Message', { timeout: 10000 });
-    await page.click('text/Message');
+    // Жмем кнопку входа
+    await Promise.all([
+      page.click('button[type="submit"]'),
+      page.waitForNavigation({ waitUntil: 'networkidle2' }),
+    ]);
+
+    // Игнорируем "Сохранить логин?" и "Включить уведомления" если появляются
+    try {
+      await page.waitForSelector('button.sqdOP.yWX7d.y3zKF', { timeout: 5000 });
+      await page.click('button.sqdOP.yWX7d.y3zKF'); // "Не сейчас"
+    } catch {}
+
+    try {
+      await page.waitForSelector('button.aOOlW.HoLwm', { timeout: 5000 });
+      await page.click('button.aOOlW.HoLwm'); // "Не сейчас"
+    } catch {}
+
+    // Переходим в директ по адресу пользователя
+    const dmUrl = `https://www.instagram.com/direct/new/?username=${usernameToDM}`;
+    console.log(`🟡 Переходим в директ пользователя ${usernameToDM}...`);
+    await page.goto(dmUrl, { waitUntil: 'networkidle2' });
+
+    // Ждем текстовое поле для ввода сообщения
+    await page.waitForSelector('textarea[placeholder="Сообщение..."], textarea[placeholder="Message..."]', { timeout: 10000 });
 
     // Вводим сообщение
-    await page.waitForSelector('textarea');
-    await page.type('textarea', message);
-    await page.keyboard.press('Enter');
+    await page.type('textarea[placeholder="Сообщение..."], textarea[placeholder="Message..."]', message, { delay: 50 });
 
-    console.log(`✅ Сообщение отправлено пользователю @${username}`);
-    await browser.close();
+    // Жмем отправить (кнопка "Отправить" — type=submit в форме)
+    await page.click('button[type="submit"]');
+
+    console.log(`✅ Сообщение отправлено пользователю ${usernameToDM}`);
+
+    // Оставляем браузер открытым, чтобы можно было видеть результат
+    // await browser.close();
+
   } catch (err) {
-    console.error('🚨 Ошибка внутри try/catch:', err);
+    console.error("❌ Ошибка при выполнении:", err);
+    process.exit(1);
   }
 })();
