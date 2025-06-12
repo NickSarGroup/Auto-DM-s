@@ -1,15 +1,16 @@
+const express = require('express');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
-const username = process.argv[2];
-const message = process.argv.slice(3).join(' ');
+const app = express();
+app.use(express.json());
 
-if (!username || !message) {
-  console.log('❌ Укажите имя пользователя и сообщение:\nПример: node send.js nicksmartposter "Привет!"');
-  process.exit(1);
-}
+app.post('/send-dm', async (req, res) => {
+  const { username, message } = req.body;
+  if (!username || !message) {
+    return res.status(400).json({ error: 'username и message обязательны' });
+  }
 
-(async () => {
   let browser;
   try {
     browser = await puppeteer.launch({
@@ -20,93 +21,44 @@ if (!username || !message) {
 
     const page = await browser.newPage();
 
-    // Установка user-agent
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36'
-    );
-
-    // Загрузка cookies
     const cookiesPath = './cookies.json';
-    if (fs.existsSync(cookiesPath)) {
-      const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
-      await page.setCookie(...cookies);
-      console.log('✅ Куки загружены');
-    } else {
-      throw new Error('❌ Файл cookies.json не найден.');
+    if (!fs.existsSync(cookiesPath)) {
+      return res.status(500).json({ error: 'Файл cookies.json не найден' });
     }
+    const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
+    await page.setCookie(...cookies);
 
-    // Переход на Instagram
-    await page.goto('https://www.instagram.com/', {
-      waitUntil: 'networkidle2',
-      timeout: 60000
-    });
+    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
 
-    // Проверка авторизации
-    if (page.url().includes('accounts/login')) {
-      throw new Error('❌ Неавторизован. Проверь cookies.');
-    }
+    await page.waitForTimeout(3000);
 
-    // Рандомная задержка
-    await delayRandom(2000, 4000);
-
-    // Переход на профиль пользователя
-    await page.goto(`https://www.instagram.com/${username}/`, {
-      waitUntil: 'networkidle2',
-      timeout: 60000
-    });
-
-    await delayRandom(3000, 5000);
-
-    // Поиск кнопки "Сообщение"
     const buttons = await page.$$('button');
-    let messageButtonClicked = false;
+    let messageButtonFound = false;
 
     for (const button of buttons) {
       const text = await page.evaluate(el => el.textContent, button);
       if (text.includes('Message') || text.includes('Сообщение')) {
         await button.click();
-        messageButtonClicked = true;
+        messageButtonFound = true;
         break;
       }
     }
 
-    if (!messageButtonClicked) {
-      throw new Error('❌ Кнопка "Сообщение" не найдена. Возможно, аккаунт закрыт.');
+    if (!messageButtonFound) {
+      throw new Error('Кнопка "Сообщение" не найдена.');
     }
 
-    // Ожидание поля ввода
     await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
-
-    // Ввод сообщения
     await page.type('textarea', message, { delay: 50 });
+    await page.keyboard.press('Enter');
 
-    // Альтернатива нажатию Enter
-    await delayRandom(1000, 2000);
-    const sendButton = await page.$('svg[aria-label="Отправить сообщение"]');
-    if (sendButton) {
-      await sendButton.click();
-    } else {
-      await page.keyboard.press('Enter');
-    }
-
-    console.log(`✅ Сообщение успешно отправлено @${username}`);
-
-    // Логгирование
-    fs.appendFileSync('sent.log', `${new Date().toISOString()} | @${username} | ${message}\n`);
-
-    // Случайное поведение
-    await page.mouse.move(100 + Math.random() * 300, 100 + Math.random() * 200);
-    await delayRandom(1000, 3000);
-
+    res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
-    console.error('❌ Ошибка:', error.message || error);
-    fs.appendFileSync('errors.log', `${new Date().toISOString()} | @${username} | ${error.message}\n`);
+    res.status(500).json({ error: error.message });
   } finally {
     if (browser) await browser.close();
   }
-})();
+});
 
-function delayRandom(min, max) {
-  const timeout = Math.floor(Math.random() * (max - min + 1)) + min;
-  return new Promise(resolve => setTimeout(resolve, timeout));
-}
+const PORT = 10000;
+app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
