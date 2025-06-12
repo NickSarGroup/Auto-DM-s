@@ -12,6 +12,10 @@ const sendMessage = async (username, message) => {
   const cookies = JSON.parse(fs.readFileSync(cookiesFilePath));
 
   const browser = await puppeteer.launch({
+  headless: false,
+  args: ['--no-sandbox', '--disable-setuid-sandbox', '--remote-debugging-port=9222'],
+});
+
     headless: false,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
     defaultViewport: null
