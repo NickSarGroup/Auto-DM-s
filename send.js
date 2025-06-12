@@ -1,59 +1,62 @@
 const puppeteer = require('puppeteer');
-const fs = require('fs');
 
-const username = process.argv[2];
-const message = process.argv[3];
+const sendMessage = async (username, message) => {
+  try {
+    const browser = await puppeteer.launch({
+      headless: false,
+      userDataDir: './profile',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    const page = await browser.newPage();
+    await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2' });
+
+    // Проверка: авторизован ли пользователь
+    try {
+      await page.waitForSelector('svg[aria-label="Direct"]', { timeout: 10000 });
+    } catch (e) {
+      console.log('🔑 Не авторизован. Войдите вручную в появившемся окне и не закрывайте его.');
+      await page.waitForSelector('svg[aria-label="Direct"]', { timeout: 120000 });
+    }
+
+    // Переход в директ
+    await page.goto(`https://www.instagram.com/direct/inbox/`, { waitUntil: 'networkidle2' });
+    await page.waitForTimeout(5000);
+
+    // Кнопка "Написать сообщение"
+    await page.click('svg[aria-label="New message"]');
+    await page.waitForTimeout(3000);
+
+    // Ввод юзернейма
+    await page.type('input[name="queryBox"]', username, { delay: 100 });
+    await page.waitForTimeout(3000);
+
+    // Клик по имени
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+
+    // Кнопка "Далее"
+    await page.click('div[role="dialog"] button[type="button"]:not([disabled])');
+    await page.waitForTimeout(3000);
+
+    // Ввод текста сообщения
+    await page.type('textarea', message, { delay: 50 });
+    await page.keyboard.press('Enter');
+
+    console.log(`✅ Сообщение "${message}" отправлено пользователю @${username}`);
+    await browser.close();
+  } catch (err) {
+    console.error('❌ Произошла ошибка:', err);
+  }
+};
+
+// Получение аргументов из командной строки
+const [, , username, ...msgParts] = process.argv;
+const message = msgParts.join(' ');
 
 if (!username || !message) {
-  console.log('❌ Укажи юзернейм и сообщение:');
-  console.log('Пример: node send.js nick_smartposter "Привет!"');
-  process.exit();
+  console.log('❌ Использование: node send.js <username> "<message>"');
+  process.exit(1);
 }
 
-(async () => {
-  const browser = await puppeteer.launch({
-    headless: false,
-    userDataDir: './profile', // сохраняет сессию, чтобы не логиниться каждый раз
-    defaultViewport: null,
-    args: ['--start-maximized']
-  });
-
-  const page = await browser.newPage();
-
-  // Переход на Instagram
-  await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2' });
-
-  // Проверка, авторизован ли пользователь
-  const isLoggedIn = await page.evaluate(() => {
-    return document.cookie.includes('ds_user_id');
-  });
-
-  if (!isLoggedIn) {
-    console.log('👀 Авторизуйся вручную в открывшемся окне, затем закрой его и запусти снова');
-    await page.waitForTimeout(30000);
-    await browser.close();
-    return;
-  }
-
-  console.log('✅ Вход выполнен, продолжаем');
-
-  // Переход на страницу пользователя
-  await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
-
-  // Нажимаем кнопку "Написать"
-  await page.waitForSelector('button', { visible: true });
-  await page.$$eval('button', (buttons) => {
-    const messageButton = buttons.find(btn => btn.textContent.includes('Message') || btn.textContent.includes('Написать'));
-    if (messageButton) messageButton.click();
-  });
-
-  // Ждём textarea
-  await page.waitForSelector('textarea', { visible: true, timeout: 30000 });
-
-  // Вводим сообщение
-  await page.type('textarea', message);
-  await page.keyboard.press('Enter');
-
-  console.log(`✅ Сообщение отправлено: ${username} — "${message}"`);
-  await browser.close();
-})();
+sendMessage(username, message);
