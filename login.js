@@ -1,4 +1,3 @@
-// login.js
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
@@ -14,7 +13,7 @@ const fs = require('fs');
 
   console.log('🔐 Войди в Instagram вручную в открывшемся окне...');
 
-  // Ждем 3 минуты (180000 мс), пока ты логинишься вручную
+  // Ожидание 3 минуты с использованием Promise
   await new Promise(resolve => setTimeout(resolve, 180000));
 
   const cookies = await page.cookies();
