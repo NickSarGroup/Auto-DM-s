@@ -1,67 +1,75 @@
-const express = require('express');
-const bodyParser = require('body-parser');
 const puppeteer = require('puppeteer');
-const fs = require('fs');
-
-const app = express();
-app.use(bodyParser.json());
-
-app.post('/send-message', async (req, res) => {
-  const { username, message } = req.body;
-  if (!username || !message) {
-    return res.status(400).json({ error: 'username and message required' });
-  }
-
-  console.log(`Queued: ${username}`);
-
-  try {
-    await sendDM(username, message);
-    res.json({ status: 'sent', to: username });
-  } catch (error) {
-    console.error(`❌ Ошибка при отправке:`, error);
-    res.status(500).json({ error: error.toString() });
-  }
-});
 
 async function sendDM(username, message) {
   const browser = await puppeteer.launch({
     headless: false,
-    defaultViewport: null,
-    args: ['--start-maximized']
+    userDataDir: './user_data',  // Папка для сессии, авторизуйся в первый запуск вручную
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
   const page = await browser.newPage();
 
-  // Загружаем cookies
-  const cookies = JSON.parse(fs.readFileSync('./cookies.json', 'utf-8'));
-  await page.setCookie(...cookies);
+  try {
+    // Переходим на профиль пользователя
+    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
 
-  // Переход к пользователю
-  const cleanUsername = username.split('|')[0].trim().replace(/\s/g, '');
-  const userUrl = `https://www.instagram.com/${cleanUsername}/`;
-  await page.goto(userUrl, { waitUntil: 'networkidle2' });
+    // Ждем кнопку "Message" (или "Написать")
+    await page.waitForSelector('button', { timeout: 15000 });
 
-  // Жмем кнопку Message
-  await page.waitForSelector('button');
-  const buttons = await page.$$('button');
-  for (let btn of buttons) {
-    const text = await (await btn.getProperty('innerText')).jsonValue();
-    if (text.toLowerCase().includes('message') || text.toLowerCase().includes('сообщение')) {
-      await btn.click();
-      break;
+    // Ищем кнопку с текстом "Message" или "Написать"
+    const buttons = await page.$$('button');
+    let messageButton = null;
+    for (const btn of buttons) {
+      const txt = await (await btn.getProperty('innerText')).jsonValue();
+      if (txt.toLowerCase().includes('message') || txt.includes('Написать')) {
+        messageButton = btn;
+        break;
+      }
     }
+    if (!messageButton) throw new Error('Кнопка Message не найдена');
+    await messageButton.click();
+
+    // Ждем поле ввода сообщения
+    await page.waitForSelector('textarea, div[contenteditable="true"]', { timeout: 15000 });
+
+    // Выбираем поле ввода
+    let input = await page.$('textarea');
+    if (!input) input = await page.$('div[contenteditable="true"]');
+    if (!input) throw new Error('Поле для ввода не найдено');
+
+    // Вводим сообщение
+    await input.focus();
+    await page.keyboard.type(message, { delay: 50 });
+
+    // Отправляем Enter
+    await page.keyboard.press('Enter');
+
+    // Ждем 3 секунды для отправки
+    await page.waitForTimeout(3000);
+
+    await browser.close();
+
+    console.log(`Сообщение отправлено пользователю ${username}`);
+  } catch (err) {
+    await page.screenshot({ path: `error-${username}.png` });
+    await browser.close();
+    throw err;
   }
-
-  // Ожидаем открытие диалога
-  await page.waitForSelector('textarea');
-  await page.type('textarea', message);
-  await page.keyboard.press('Enter');
-
-  console.log(`✅ Отправлено сообщение для ${username}`);
-  await browser.close();
 }
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server started on port ${PORT}`);
-});
+// Запуск через node index.js username "Текст сообщения"
+(async () => {
+  const args = process.argv.slice(2);
+  if (args.length < 2) {
+    console.log('Использование: node index.js username "текст сообщения"');
+    process.exit(1);
+  }
+  const [username, ...msgParts] = args;
+  const message = msgParts.join(' ');
+
+  try {
+    await sendDM(username, message);
+  } catch (e) {
+    console.error('Ошибка:', e.message);
+  }
+})();
