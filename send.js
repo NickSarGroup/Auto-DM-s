@@ -11,8 +11,8 @@ const puppeteer = require('puppeteer');
     }
 
     // Вставь сюда свои данные для входа
-    const IG_LOGIN = 'твоя_почта_или_логин_инсты';
-    const IG_PASSWORD = 'твой_пароль';
+    const IG_LOGIN = 'nicksmartposter';
+    const IG_PASSWORD = '0RrjZIx1q4';
 
     const browser = await puppeteer.launch({ headless: false, slowMo: 50 });
     const page = await browser.newPage();
