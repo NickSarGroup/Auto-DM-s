@@ -14,7 +14,7 @@ const fs = require('fs');
   console.log('🔐 Войди в Instagram вручную в открывшемся окне...');
 
   // Ожидание 3 минуты с использованием Promise
-  await new Promise(resolve => setTimeout(resolve, 180000));
+  await new Promise(resolve => setTimeout(resolve, 180000)); // 3 минуты
 
   const cookies = await page.cookies();
   fs.writeFileSync('cookies.json', JSON.stringify(cookies, null, 2));
