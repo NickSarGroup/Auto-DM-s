@@ -1,5 +1,12 @@
 const puppeteer = require('puppeteer');
 
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔥 [unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('🔥 [uncaughtException]', err);
+});
+
 (async () => {
   const username = process.argv[2];
   const message = process.argv[3];
@@ -21,26 +28,25 @@ const puppeteer = require('puppeteer');
     await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2' });
 
     // Ждём авторизации вручную
-    console.log('🔐 Войди в аккаунт Instagram вручную и нажми ENTER...');
+    console.log('🔐 Войди в Instagram вручную и нажми ENTER...');
     process.stdin.resume();
     await new Promise(resolve => process.stdin.once('data', resolve));
 
-    // Переход в профиль пользователя
+    // Переход к нужному пользователю
     await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
 
     // Нажимаем "Message"
     await page.waitForSelector('text/Message', { timeout: 10000 });
     await page.click('text/Message');
 
-    // Ждём поле ввода и вводим сообщение
+    // Вводим сообщение
     await page.waitForSelector('textarea');
     await page.type('textarea', message);
     await page.keyboard.press('Enter');
 
     console.log(`✅ Сообщение отправлено пользователю @${username}`);
-
     await browser.close();
   } catch (err) {
-    console.error('🚨 Произошла ошибка:', err);
+    console.error('🚨 Ошибка внутри try/catch:', err);
   }
 })();
