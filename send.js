@@ -1,79 +1,46 @@
 const puppeteer = require('puppeteer');
 
-const sendMessage = async (username, message) => {
-  const browser = await puppeteer.launch({
-    headless: false,
-    userDataDir: './profile',
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
+(async () => {
+  const username = process.argv[2];
+  const message = process.argv[3];
 
-  const page = await browser.newPage();
-
-  // 🔥 Ловим ВСЕ возможные ошибки
-  page.on('error', err => console.error('[Page crash]', err));
-  page.on('pageerror', err => console.error('[Page error]', err));
-  page.on('console', msg => {
-    if (msg.type() === 'error') {
-      console.error('[Console error]', msg.text());
-    }
-  });
-  browser.on('disconnected', () => {
-    console.error('[Browser disconnected]');
-  });
+  if (!username || !message) {
+    console.error('❌ Использование: node send.js <username> <message>');
+    process.exit(1);
+  }
 
   try {
+    const browser = await puppeteer.launch({
+      headless: false,
+      defaultViewport: null,
+      args: ['--start-maximized'],
+    });
+
+    const page = await browser.newPage();
+
     await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2' });
 
-    try {
-      await page.waitForSelector('svg[aria-label="Direct"]', { timeout: 10000 });
-    } catch {
-      console.log('🔐 Вход не выполнен. Войдите вручную и дождитесь иконки Direct.');
-      await page.waitForSelector('svg[aria-label="Direct"]', { timeout: 120000 });
-    }
+    // Ждём авторизации вручную
+    console.log('🔐 Войди в аккаунт Instagram вручную и нажми ENTER...');
+    process.stdin.resume();
+    await new Promise(resolve => process.stdin.once('data', resolve));
 
-    await page.goto('https://www.instagram.com/direct/inbox/', { waitUntil: 'networkidle2' });
-    await page.waitForTimeout(2000);
+    // Переход в профиль пользователя
+    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
 
-    await page.click('svg[aria-label="New message"]');
-    await page.waitForTimeout(1000);
+    // Нажимаем "Message"
+    await page.waitForSelector('text/Message', { timeout: 10000 });
+    await page.click('text/Message');
 
-    await page.type('input[name="queryBox"]', username, { delay: 100 });
-    await page.waitForTimeout(2000);
-
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(1000);
-
-    await page.click('div[role="dialog"] button[type="button"]:not([disabled])');
-    await page.waitForTimeout(2000);
-
-    await page.type('textarea', message, { delay: 50 });
+    // Ждём поле ввода и вводим сообщение
+    await page.waitForSelector('textarea');
+    await page.type('textarea', message);
     await page.keyboard.press('Enter');
 
-    console.log(`✅ Сообщение отправлено @${username}`);
+    console.log(`✅ Сообщение отправлено пользователю @${username}`);
+
     await browser.close();
   } catch (err) {
-    console.error('❌ Ошибка в процессе:', err);
-    await browser.close();
+    console.error('🚨 Произошла ошибка:', err);
   }
-};
-
-// 👇 Ловим ВСЕ необработанные ошибки (включая WebSocket и Chromium low-level)
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('🚨 Unhandled Rejection:', reason);
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('💥 Uncaught Exception:', err);
-});
-
-// Аргументы
-const [, , username, ...msgParts] = process.argv;
-const message = msgParts.join(' ');
-
-if (!username || !message) {
-  console.log('❌ Использование: node send.js <username> "<сообщение>"');
-  process.exit(1);
-}
-
-sendMessage(username, message);
+})();
