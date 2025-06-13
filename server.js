@@ -36,42 +36,52 @@ app.post('/send-dm', async (req, res) => {
 
     await page.waitForTimeout(3000);
 
+    let messageButton = null;
     const buttons = await page.$$('button');
-    let messageButtonFound = false;
 
     for (const button of buttons) {
       const text = await page.evaluate(el => el.textContent, button);
       console.log(`[DEBUG] Кнопка: ${text}`);
-      if (text.includes('Message') || text.includes('Сообщение')) {
+
+      if (text.includes('Follow')) {
+        console.log('[ACTION] Нажимаю Follow...');
         await button.click();
-        messageButtonFound = true;
+        await page.waitForTimeout(2000);
+      }
+
+      if (text.includes('Message') || text.includes('Сообщение')) {
+        messageButton = button;
         break;
       }
     }
 
-    // Если не нашли кнопку по тексту — ищем по иконке ✈️
-    if (!messageButtonFound) {
-      console.log('[INFO] Поиск по иконке...');
-      const icon = await page.$('svg[aria-label="Message"]');
-      if (icon) {
-        const parentBtn = await icon.evaluateHandle(el => el.closest('button'));
-        if (parentBtn) {
-          await parentBtn.click();
-          messageButtonFound = true;
+    // Вторичная проверка после Follow
+    if (!messageButton) {
+      console.log('[INFO] Ищу кнопку "Message" повторно...');
+      await page.waitForTimeout(2000);
+
+      const updatedButtons = await page.$$('button');
+      for (const button of updatedButtons) {
+        const text = await page.evaluate(el => el.textContent, button);
+        console.log(`[DEBUG] Повторная кнопка: ${text}`);
+        if (text.includes('Message') || text.includes('Сообщение')) {
+          messageButton = button;
+          break;
         }
       }
     }
 
-    if (!messageButtonFound) {
+    if (!messageButton) {
       await page.screenshot({ path: 'debug.png', fullPage: true });
       throw new Error('Кнопка "Message" не найдена.');
     }
 
+    await messageButton.click();
     await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
     await page.type('textarea', message, { delay: 50 });
     await page.keyboard.press('Enter');
 
-    res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
+    res.json({ status: 'ok', message: 'Сообщение отправлено' });
   } catch (error) {
     console.error('[FATAL ERROR]', error);
     res.status(500).json({ error: error.message });
