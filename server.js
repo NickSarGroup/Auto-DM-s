@@ -39,15 +39,14 @@ app.post('/send-dm', async (req, res) => {
     await page.goto(profileUrl, { waitUntil: 'networkidle2' });
     console.log('[INFO] Страница пользователя загружена');
 
-    // Небольшая пауза, чтобы интерфейс полностью прогрузился
     await page.waitForTimeout(3000);
 
-    // Ищем кнопку Message среди <button> и <a>
-    const elements = await page.$$('button, a');
+    // Получаем все кнопки <button>, <a> и <div role="button">
+    const buttonElements = await page.$$('button, a, div[role="button"]');
 
     let messageButton = null;
 
-    for (const el of elements) {
+    for (const el of buttonElements) {
       const text = await page.evaluate(el => el.textContent.trim(), el);
       const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), el);
       const title = await page.evaluate(el => el.getAttribute('title'), el);
@@ -71,14 +70,12 @@ app.post('/send-dm', async (req, res) => {
     console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
     await messageButton.click();
 
-    // Ждем появления поля ввода сообщения
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
     } catch {
       await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 10000 });
     }
 
-    // Определяем селектор для ввода
     const hasTextarea = await page.$('textarea');
     const inputSelector = hasTextarea ? 'textarea' : 'div[contenteditable="true"]';
 
