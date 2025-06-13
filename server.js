@@ -7,20 +7,14 @@ app.use(express.json());
 
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
+
   console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
 
   if (!username || !message) {
     return res.status(400).json({ error: 'username и message обязательны' });
   }
 
-  const cookiesPath = './cookies.json';
-  if (!fs.existsSync(cookiesPath)) {
-    console.error('[ERROR] cookies.json не найден');
-    return res.status(500).json({ error: 'Файл cookies.json не найден' });
-  }
-
   let browser;
-
   try {
     browser = await puppeteer.launch({
       headless: false,
@@ -30,24 +24,24 @@ app.post('/send-dm', async (req, res) => {
 
     const page = await browser.newPage();
 
+    const cookiesPath = './cookies.json';
+    if (!fs.existsSync(cookiesPath)) {
+      return res.status(500).json({ error: 'Файл cookies.json не найден' });
+    }
+
     const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
     await page.setCookie(...cookies);
 
     await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
 
-    await page.waitForTimeout?.(3000) || new Promise(r => setTimeout(r, 3000)); // ожидание 3 сек
+    await page.waitForTimeout(3000);
 
-    // Логируем кнопки
     const buttons = await page.$$('button');
-    for (const button of buttons) {
-      const text = await page.evaluate(el => el.textContent, button);
-      console.log('[DEBUG] Кнопка:', text);
-    }
-
-    // Ищем кнопку "Message" по тексту
     let messageButtonFound = false;
+
     for (const button of buttons) {
       const text = await page.evaluate(el => el.textContent, button);
+      console.log(`[DEBUG] Кнопка: ${text}`);
       if (text.includes('Message') || text.includes('Сообщение')) {
         await button.click();
         messageButtonFound = true;
@@ -55,8 +49,9 @@ app.post('/send-dm', async (req, res) => {
       }
     }
 
-    // Альтернатива: поиск по иконке
+    // Если не нашли кнопку по тексту — ищем по иконке ✈️
     if (!messageButtonFound) {
+      console.log('[INFO] Поиск по иконке...');
       const icon = await page.$('svg[aria-label="Message"]');
       if (icon) {
         const parentBtn = await icon.evaluateHandle(el => el.closest('button'));
@@ -68,10 +63,10 @@ app.post('/send-dm', async (req, res) => {
     }
 
     if (!messageButtonFound) {
-      throw new Error('Кнопка "Сообщение" не найдена.');
+      await page.screenshot({ path: 'debug.png', fullPage: true });
+      throw new Error('Кнопка "Message" не найдена.');
     }
 
-    // Вводим сообщение
     await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
     await page.type('textarea', message, { delay: 50 });
     await page.keyboard.press('Enter');
@@ -86,4 +81,4 @@ app.post('/send-dm', async (req, res) => {
 });
 
 const PORT = 10000;
-app.listen(PORT, () => console.log(`✅ Server started on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
