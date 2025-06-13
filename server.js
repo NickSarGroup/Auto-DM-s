@@ -1,4 +1,5 @@
 console.log("=== SERVER LOADED ===");
+
 const express = require('express');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
