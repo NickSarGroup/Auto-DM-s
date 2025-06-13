@@ -15,30 +15,37 @@ app.post('/send-dm', async (req, res) => {
 
   const cookiesPath = './cookies.json';
   if (!fs.existsSync(cookiesPath)) {
+    console.error('[ERROR] cookies.json не найден');
     return res.status(500).json({ error: 'Файл cookies.json не найден' });
   }
 
   let browser;
+
   try {
     browser = await puppeteer.launch({
       headless: false,
-      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // путь для macOS
-      // если Windows — замени на:
-      // executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: null
     });
 
     const page = await browser.newPage();
+
     const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
     await page.setCookie(...cookies);
 
     await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
-    await new Promise(resolve => setTimeout(resolve, 3000));
 
+    await page.waitForTimeout?.(3000) || new Promise(r => setTimeout(r, 3000)); // ожидание 3 сек
+
+    // Логируем кнопки
     const buttons = await page.$$('button');
-    let messageButtonFound = false;
+    for (const button of buttons) {
+      const text = await page.evaluate(el => el.textContent, button);
+      console.log('[DEBUG] Кнопка:', text);
+    }
 
+    // Ищем кнопку "Message" по тексту
+    let messageButtonFound = false;
     for (const button of buttons) {
       const text = await page.evaluate(el => el.textContent, button);
       if (text.includes('Message') || text.includes('Сообщение')) {
@@ -48,17 +55,30 @@ app.post('/send-dm', async (req, res) => {
       }
     }
 
+    // Альтернатива: поиск по иконке
+    if (!messageButtonFound) {
+      const icon = await page.$('svg[aria-label="Message"]');
+      if (icon) {
+        const parentBtn = await icon.evaluateHandle(el => el.closest('button'));
+        if (parentBtn) {
+          await parentBtn.click();
+          messageButtonFound = true;
+        }
+      }
+    }
+
     if (!messageButtonFound) {
       throw new Error('Кнопка "Сообщение" не найдена.');
     }
 
+    // Вводим сообщение
     await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
     await page.type('textarea', message, { delay: 50 });
     await page.keyboard.press('Enter');
 
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
-    console.error('[FATAL ERROR]', error); // Показываем ошибку в консоль
+    console.error('[FATAL ERROR]', error);
     res.status(500).json({ error: error.message });
   } finally {
     if (browser) await browser.close();
