@@ -1,93 +1,38 @@
-const express = require('express');
 const puppeteer = require('puppeteer');
-const fs = require('fs');
 
-const app = express();
-app.use(express.json());
+(async () => {
+  const browser = await puppeteer.launch({ headless: false }); // для наглядности
+  const page = await browser.newPage();
 
-app.post('/send-dm', async (req, res) => {
-  const { username, message } = req.body;
+  const username = 'nick_smartposter'; // заменяй на нужного
+  const profileUrl = `https://www.instagram.com/${username}/`;
 
-  console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
+  await page.goto(profileUrl, { waitUntil: 'networkidle2' });
 
-  if (!username || !message) {
-    return res.status(400).json({ error: 'username и message обязательны' });
+  // Подождать появления кнопок с role="button"
+  await page.waitForSelector('div[role="button"]');
+
+  // Найти кнопку "Message" и нажать
+  const buttons = await page.$$('div[role="button"]');
+  let messageBtn = null;
+
+  for (const btn of buttons) {
+    const text = await (await btn.getProperty('textContent')).jsonValue();
+    if (text.trim() === 'Message') {
+      messageBtn = btn;
+      break;
+    }
   }
 
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      headless: false,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      defaultViewport: null,
-    });
-
-    const page = await browser.newPage();
-
-    const cookiesPath = './cookies.json';
-    if (!fs.existsSync(cookiesPath)) {
-      return res.status(500).json({ error: 'Файл cookies.json не найден' });
-    }
-
-    const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
-    await page.setCookie(...cookies);
-    console.log('[INFO] Cookies загружены');
-
-    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
-    console.log('[INFO] Страница пользователя загружена');
-
-    // Заменили на рабочий вариант
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    const elements = await page.$$('button, a'); // ищем и <button>, и <a>
-
-let messageButton = null;
-
-for (const el of elements) {
-  const text = await page.evaluate(el => el.textContent.trim(), el);
-  const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), el);
-  const title = await page.evaluate(el => el.getAttribute('title'), el);
-
-  console.log('[DEBUG] Кнопка:', { text, ariaLabel, title });
-
-  if (
-    text === 'Message' ||
-    ariaLabel === 'Message' ||
-    title === 'Message'
-  ) {
-    messageButton = el;
-    break;
+  if (!messageBtn) {
+    throw new Error('Кнопка "Message" не найдена');
   }
-}
 
-    if (!messageButton) {
-      throw new Error('Кнопка "Message" не найдена.');
-    }
+  await messageBtn.click();
 
-    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
-    await messageButton.click();
+  console.log('Кнопка "Message" нажата!');
 
-    try {
-      await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
-    } catch {
-      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 10000 });
-    }
+  // Далее можно добавить отправку сообщения и т.п.
 
-    const inputSelector = await page.$('textarea') ? 'textarea' : 'div[contenteditable="true"]';
-    await page.focus(inputSelector);
-    await page.keyboard.type(message, { delay: 50 });
-    await page.keyboard.press('Enter');
-
-    console.log('[INFO] Сообщение отправлено');
-
-    res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
-  } catch (error) {
-    console.error('[FATAL ERROR]', error);
-    res.status(500).json({ error: error.message });
-  } finally {
-    if (browser) await browser.close();
-  }
-});
-
-const PORT = 10000;
-app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+  // await browser.close();
+})();
