@@ -13,34 +13,27 @@ app.post('/send-dm', async (req, res) => {
     return res.status(400).json({ error: 'username и message обязательны' });
   }
 
+  const cookiesPath = './cookies.json';
+  if (!fs.existsSync(cookiesPath)) {
+    return res.status(500).json({ error: 'Файл cookies.json не найден' });
+  }
+
   let browser;
   try {
     browser = await puppeteer.launch({
       headless: false,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-zygote',
-        '--disable-gpu'
-      ],
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // путь для macOS
+      // если Windows — замени на:
+      // executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
       defaultViewport: null
     });
 
     const page = await browser.newPage();
-
-    const cookiesPath = './cookies.json';
-    if (!fs.existsSync(cookiesPath)) {
-      console.error('[FATAL ERROR] cookies.json не найден');
-      return res.status(500).json({ error: 'Файл cookies.json не найден' });
-    }
-
     const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
     await page.setCookie(...cookies);
 
     await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
-
     await page.waitForTimeout(3000);
 
     const buttons = await page.$$('button');
@@ -65,7 +58,7 @@ app.post('/send-dm', async (req, res) => {
 
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
-    console.error('[FATAL ERROR]', error); // Вот тут будет полная ошибка
+    console.error('[FATAL ERROR]', error); // Показываем ошибку в консоль
     res.status(500).json({ error: error.message });
   } finally {
     if (browser) await browser.close();
