@@ -39,26 +39,26 @@ app.post('/send-dm', async (req, res) => {
     // Заменили на рабочий вариант
     await new Promise(resolve => setTimeout(resolve, 3000));
 
-    const elements = await page.$$('button, a'); // ищем и <button>, и <a>
+    const buttons = await page.$$('button');
 
-let messageButton = null;
+    let messageButton = null;
 
-for (const el of elements) {
-  const text = await page.evaluate(el => el.textContent.trim(), el);
-  const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), el);
-  const title = await page.evaluate(el => el.getAttribute('title'), el);
+    for (const button of buttons) {
+      const text = await page.evaluate(el => el.textContent.trim(), button);
+      const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), button);
+      const title = await page.evaluate(el => el.getAttribute('title'), button);
 
-  console.log('[DEBUG] Кнопка:', { text, ariaLabel, title });
+      console.log('[DEBUG] Кнопка:', { text, ariaLabel, title });
 
-  if (
-    text === 'Message' ||
-    ariaLabel === 'Message' ||
-    title === 'Message'
-  ) {
-    messageButton = el;
-    break;
-  }
-}
+      if (
+        text === 'Message' ||
+        ariaLabel === 'Message' ||
+        title === 'Message'
+      ) {
+        messageButton = button;
+        break;
+      }
+    }
 
     if (!messageButton) {
       throw new Error('Кнопка "Message" не найдена.');
