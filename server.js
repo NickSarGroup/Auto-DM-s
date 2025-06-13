@@ -5,7 +5,7 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-app.post('/send', async (req, res) => {
+app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
   console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
 
