@@ -5,8 +5,6 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-const COOKIES_PATH = './cookies.json';
-
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
 
@@ -17,7 +15,6 @@ app.post('/send-dm', async (req, res) => {
   }
 
   let browser;
-
   try {
     browser = await puppeteer.launch({
       headless: false,
@@ -27,11 +24,12 @@ app.post('/send-dm', async (req, res) => {
 
     const page = await browser.newPage();
 
-    if (!fs.existsSync(COOKIES_PATH)) {
-      throw new Error('Файл cookies.json не найден');
+    const cookiesPath = './cookies.json';
+    if (!fs.existsSync(cookiesPath)) {
+      return res.status(500).json({ error: 'Файл cookies.json не найден' });
     }
 
-    const cookies = JSON.parse(fs.readFileSync(COOKIES_PATH, 'utf8'));
+    const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
     await page.setCookie(...cookies);
     console.log('[INFO] Cookies загружены');
 
@@ -39,26 +37,21 @@ app.post('/send-dm', async (req, res) => {
     await page.goto(profileUrl, { waitUntil: 'networkidle2' });
     console.log('[INFO] Страница пользователя загружена');
 
-    await page.waitForTimeout(3000);
+    // Заменяем waitForTimeout
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
-    // Получаем все кнопки <button>, <a> и <div role="button">
-    const buttonElements = await page.$$('button, a, div[role="button"]');
+    // Ищем кнопку "Message" среди div с role="button"
+    const buttons = await page.$$('div[role="button"]');
 
     let messageButton = null;
 
-    for (const el of buttonElements) {
-      const text = await page.evaluate(el => el.textContent.trim(), el);
-      const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), el);
-      const title = await page.evaluate(el => el.getAttribute('title'), el);
+    for (const btn of buttons) {
+      const text = await page.evaluate(el => el.textContent.trim(), btn);
 
-      console.log('[DEBUG] Кнопка:', { text, ariaLabel, title });
+      console.log('[DEBUG] Кнопка:', text);
 
-      if (
-        text === 'Message' ||
-        ariaLabel === 'Message' ||
-        title === 'Message'
-      ) {
-        messageButton = el;
+      if (text === 'Message') {
+        messageButton = btn;
         break;
       }
     }
@@ -76,8 +69,7 @@ app.post('/send-dm', async (req, res) => {
       await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 10000 });
     }
 
-    const hasTextarea = await page.$('textarea');
-    const inputSelector = hasTextarea ? 'textarea' : 'div[contenteditable="true"]';
+    const inputSelector = await page.$('textarea') ? 'textarea' : 'div[contenteditable="true"]';
 
     await page.focus(inputSelector);
     await page.keyboard.type(message, { delay: 50 });
@@ -95,6 +87,4 @@ app.post('/send-dm', async (req, res) => {
 });
 
 const PORT = 10000;
-app.listen(PORT, () => {
-  console.log(`Server started on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
