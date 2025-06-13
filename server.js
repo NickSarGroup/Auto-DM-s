@@ -36,10 +36,9 @@ app.post('/send-dm', async (req, res) => {
     await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
     console.log('[INFO] Страница пользователя загружена');
 
-    // Ждем немного, чтобы элементы успели отобразиться
-    await page.waitForTimeout(3000);
+    // Заменили на рабочий вариант
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
-    // Поиск кнопки Message по тексту, aria-label или title
     const buttons = await page.$$('button');
 
     let messageButton = null;
@@ -68,15 +67,12 @@ app.post('/send-dm', async (req, res) => {
     console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
     await messageButton.click();
 
-    // Ждем появление textarea для ввода сообщения (иногда селектор может отличаться)
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
     } catch {
-      // Иногда Instagram использует div[contenteditable="true"]
       await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 10000 });
     }
 
-    // Печатаем сообщение в поле
     const inputSelector = await page.$('textarea') ? 'textarea' : 'div[contenteditable="true"]';
     await page.focus(inputSelector);
     await page.keyboard.type(message, { delay: 50 });
