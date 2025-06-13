@@ -1,72 +1,99 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json());
 
-let browser;
-
-async function initBrowser() {
-  if (!browser) {
-    browser = await puppeteer.launch({ headless: false });
-  }
-  return browser;
-}
+const COOKIES_PATH = './cookies.json';
 
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
+
+  console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
 
   if (!username || !message) {
     return res.status(400).json({ error: 'username и message обязательны' });
   }
 
+  let browser;
+
   try {
-    const browser = await initBrowser();
+    browser = await puppeteer.launch({
+      headless: false,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      defaultViewport: null,
+    });
+
     const page = await browser.newPage();
 
+    if (!fs.existsSync(COOKIES_PATH)) {
+      throw new Error('Файл cookies.json не найден');
+    }
+
+    const cookies = JSON.parse(fs.readFileSync(COOKIES_PATH, 'utf8'));
+    await page.setCookie(...cookies);
+    console.log('[INFO] Cookies загружены');
+
     const profileUrl = `https://www.instagram.com/${username}/`;
-    console.info(`[INFO] Открываем профиль ${profileUrl}`);
     await page.goto(profileUrl, { waitUntil: 'networkidle2' });
+    console.log('[INFO] Страница пользователя загружена');
 
-    // Ждем появления кнопок
-    await page.waitForSelector('div[role="button"]', { timeout: 10000 });
+    // Небольшая пауза, чтобы интерфейс полностью прогрузился
+    await page.waitForTimeout(3000);
 
-    // Ищем кнопку "Message"
-    const buttons = await page.$$('div[role="button"]');
-    let messageBtn = null;
+    // Ищем кнопку Message среди <button> и <a>
+    const elements = await page.$$('button, a');
 
-    for (const btn of buttons) {
-      const text = await (await btn.getProperty('textContent')).jsonValue();
-      if (text.trim() === 'Message') {
-        messageBtn = btn;
+    let messageButton = null;
+
+    for (const el of elements) {
+      const text = await page.evaluate(el => el.textContent.trim(), el);
+      const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), el);
+      const title = await page.evaluate(el => el.getAttribute('title'), el);
+
+      console.log('[DEBUG] Кнопка:', { text, ariaLabel, title });
+
+      if (
+        text === 'Message' ||
+        ariaLabel === 'Message' ||
+        title === 'Message'
+      ) {
+        messageButton = el;
         break;
       }
     }
 
-    if (!messageBtn) {
-      throw new Error('Кнопка "Message" не найдена');
+    if (!messageButton) {
+      throw new Error('Кнопка "Message" не найдена.');
     }
 
-    console.info('[INFO] Нажимаем кнопку "Message"');
-    await messageBtn.click();
+    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
+    await messageButton.click();
 
-    // Ждем появления textarea или input для сообщения (примерно)
-    await page.waitForSelector('textarea', { timeout: 5000 });
+    // Ждем появления поля ввода сообщения
+    try {
+      await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
+    } catch {
+      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 10000 });
+    }
 
-    // Вводим сообщение
-    await page.type('textarea', message, { delay: 50 });
+    // Определяем селектор для ввода
+    const hasTextarea = await page.$('textarea');
+    const inputSelector = hasTextarea ? 'textarea' : 'div[contenteditable="true"]';
 
-    // Отправляем сообщение нажатием Enter
+    await page.focus(inputSelector);
+    await page.keyboard.type(message, { delay: 50 });
     await page.keyboard.press('Enter');
 
-    console.info(`[INFO] Сообщение отправлено пользователю ${username}`);
+    console.log('[INFO] Сообщение отправлено');
 
-    await page.close();
-
-    res.json({ status: 'success', message: `Сообщение отправлено пользователю ${username}` });
+    res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
     console.error('[FATAL ERROR]', error);
     res.status(500).json({ error: error.message });
+  } finally {
+    if (browser) await browser.close();
   }
 });
 
