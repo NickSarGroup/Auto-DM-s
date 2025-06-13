@@ -1,34 +1,36 @@
 const express = require('express');
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer');
 const fs = require('fs');
 
 const app = express();
-const PORT = 10000;
-
 app.use(express.json());
 
 app.post('/send', async (req, res) => {
   const { username, message } = req.body;
   console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
 
-  try {
-    const browser = await puppeteer.launch({
-      headless: false,
-      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+  const browser = await puppeteer.launch({
+    headless: false,
+    userDataDir: './profile',
+    defaultViewport: null,
+    args: ['--start-maximized']
+  });
 
+  try {
     const page = await browser.newPage();
 
-    // Загружаем cookies
-    const cookies = JSON.parse(fs.readFileSync('cookies.json', 'utf8'));
-    await page.setCookie(...cookies);
-    console.log('[INFO] Cookies загружены');
+    // Загрузка cookies
+    if (fs.existsSync('cookies.json')) {
+      const cookies = JSON.parse(fs.readFileSync('cookies.json'));
+      await page.setCookie(...cookies);
+      console.log('[INFO] Cookies загружены');
+    }
 
-    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
+    const profileUrl = `https://www.instagram.com/${username}`;
+    await page.goto(profileUrl, { waitUntil: 'networkidle2' });
     console.log('[INFO] Страница пользователя загружена');
 
-    // Ждём чуть-чуть, чтобы элементы успели прогрузиться
+    // Ждём кнопки "Follow" или аналогичной для уверенности в загрузке интерфейса
     await page.waitForTimeout(3000);
 
     const elements = await page.$$('button, a');
@@ -38,13 +40,15 @@ app.post('/send', async (req, res) => {
       const text = await page.evaluate(el => el.textContent?.trim(), el);
       const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), el);
       const title = await page.evaluate(el => el.getAttribute('title'), el);
+      const html = await page.evaluate(el => el.innerHTML, el);
 
-      console.log('[DEBUG] Кнопка:', { text, ariaLabel, title });
+      console.log('[DEBUG] Кнопка:', { text, ariaLabel, title, html });
 
       if (
-        text === 'Message' ||
-        ariaLabel === 'Message' ||
-        title === 'Message'
+        (text && text.toLowerCase().includes('message')) ||
+        (ariaLabel && ariaLabel.toLowerCase().includes('message')) ||
+        (title && title.toLowerCase().includes('message')) ||
+        (html && html.toLowerCase().includes('message'))
       ) {
         messageButton = el;
         break;
@@ -52,27 +56,29 @@ app.post('/send', async (req, res) => {
     }
 
     if (!messageButton) {
-      throw new Error('Кнопка "Message" не найдена.');
+      await page.screenshot({ path: 'debug_not_found.png', fullPage: true });
+      throw new Error('Кнопка "Message" не найдена. Скрин сохранён как debug_not_found.png');
     }
 
     await messageButton.click();
-    console.log('[INFO] Кнопка "Message" нажата');
+    console.log('[INFO] Клик по кнопке "Message"');
 
-    // Ждём появления textarea
+    // Ждём textarea
     await page.waitForSelector('textarea', { timeout: 10000 });
     await page.type('textarea', message);
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
-
-    await browser.close();
-    res.send({ success: true });
+    res.send({ status: 'ok' });
   } catch (err) {
     console.error('[FATAL ERROR]', err);
-    res.status(500).send({ success: false, error: err.message });
+    res.status(500).send({ error: err.message });
+  } finally {
+    // НЕ закрываем браузер — оставляем открытым для отладки
+    // await browser.close();
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server started on http://localhost:${PORT}`);
+app.listen(10000, () => {
+  console.log('Server started on http://localhost:10000');
 });
