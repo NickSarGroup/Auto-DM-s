@@ -34,7 +34,7 @@ app.post('/send-dm', async (req, res) => {
     await page.setCookie(...cookies);
 
     await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
-    await page.waitForTimeout(3000);
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     const buttons = await page.$$('button');
     let messageButtonFound = false;
