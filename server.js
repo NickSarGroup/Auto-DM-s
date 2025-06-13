@@ -1,84 +1,64 @@
-const express = require('express');
-const puppeteer = require('puppeteer');
-const fs = require('fs');
-
-const app = express();
-app.use(express.json());
-
-app.post('/send-dm', async (req, res) => {
+app.post(['/send', '/send-dm'], async (req, res) => {
   const { username, message } = req.body;
   console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
 
-  const browser = await puppeteer.launch({
-    headless: false,
-    userDataDir: './profile',
-    defaultViewport: null,
-    args: ['--start-maximized']
-  });
-
   try {
+    const browser = await puppeteer.launch({ headless: false });
     const page = await browser.newPage();
 
     // Загрузка cookies
-    if (fs.existsSync('cookies.json')) {
-      const cookies = JSON.parse(fs.readFileSync('cookies.json'));
-      await page.setCookie(...cookies);
-      console.log('[INFO] Cookies загружены');
-    }
+    const cookies = JSON.parse(fs.readFileSync('./cookies.json', 'utf-8'));
+    await page.setCookie(...cookies);
+    console.log('[INFO] Cookies загружены');
 
-    const profileUrl = `https://www.instagram.com/${username}`;
-    await page.goto(profileUrl, { waitUntil: 'networkidle2' });
+    // Переход на страницу пользователя
+    await page.goto(`https://www.instagram.com/${username}`, { waitUntil: 'networkidle2' });
     console.log('[INFO] Страница пользователя загружена');
 
-    // Ждём кнопки "Follow" или аналогичной для уверенности в загрузке интерфейса
-    await page.waitForTimeout(3000);
+    // Поиск кнопки Message
+    const buttons = await page.$$('button, a');
 
-    const elements = await page.$$('button, a');
     let messageButton = null;
 
-    for (const el of elements) {
-      const text = await page.evaluate(el => el.textContent?.trim(), el);
-      const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), el);
-      const title = await page.evaluate(el => el.getAttribute('title'), el);
-      const html = await page.evaluate(el => el.innerHTML, el);
+    for (const btn of buttons) {
+      const text = await page.evaluate(el => el.innerText, btn);
+      const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), btn);
+      const title = await page.evaluate(el => el.getAttribute('title'), btn);
 
-      console.log('[DEBUG] Кнопка:', { text, ariaLabel, title, html });
+      console.log('[DEBUG] Кнопка:', { text, ariaLabel, title });
 
       if (
-        (text && text.toLowerCase().includes('message')) ||
-        (ariaLabel && ariaLabel.toLowerCase().includes('message')) ||
-        (title && title.toLowerCase().includes('message')) ||
-        (html && html.toLowerCase().includes('message'))
+        text?.toLowerCase().includes('message') ||
+        ariaLabel?.toLowerCase().includes('message') ||
+        title?.toLowerCase().includes('message')
       ) {
-        messageButton = el;
+        messageButton = btn;
         break;
       }
     }
 
     if (!messageButton) {
-      await page.screenshot({ path: 'debug_not_found.png', fullPage: true });
-      throw new Error('Кнопка "Message" не найдена. Скрин сохранён как debug_not_found.png');
+      throw new Error('Кнопка "Message" не найдена.');
     }
 
     await messageButton.click();
-    console.log('[INFO] Клик по кнопке "Message"');
+    console.log('[INFO] Кнопка "Message" нажата');
 
-    // Ждём textarea
-    await page.waitForSelector('textarea', { timeout: 10000 });
-    await page.type('textarea', message);
-    await page.keyboard.press('Enter');
+    await page.waitForSelector('textarea, [contenteditable="true"]', { timeout: 10000 });
+    const textArea = await page.$('textarea, [contenteditable="true"]');
+
+    if (!textArea) throw new Error('Поле ввода не найдено');
+
+    await textArea.type(message, { delay: 100 });
+    await textArea.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
-    res.send({ status: 'ok' });
-  } catch (err) {
-    console.error('[FATAL ERROR]', err);
-    res.status(500).send({ error: err.message });
-  } finally {
-    // НЕ закрываем браузер — оставляем открытым для отладки
-    // await browser.close();
-  }
-});
 
-app.listen(10000, () => {
-  console.log('Server started on http://localhost:10000');
+    await page.waitForTimeout?.(2000); // с последними версиями puppeteer нужен check
+    await browser.close();
+    res.send({ success: true });
+  } catch (error) {
+    console.error('[FATAL ERROR]', error);
+    res.status(500).send({ error: error.message });
+  }
 });
