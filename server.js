@@ -1,89 +1,97 @@
 const express = require('express');
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer');
 const fs = require('fs');
-const path = require('path');
 
 const app = express();
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
-const COOKIES_PATH = path.resolve(__dirname, 'cookies.json');
-const CHROME_EXEC_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'; // поменяй на свой путь
+app.post('/send-dm', async (req, res) => {
+  const { username, message } = req.body;
 
-(async () => {
-  const browser = await puppeteer.launch({
-    headless: false,
-    executablePath: CHROME_EXEC_PATH,
-    userDataDir: './user_data', // чтобы сессия сохранялась
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
+  console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
 
-  const page = await browser.newPage();
-
-  // Загружаем cookies, если есть
-  if (fs.existsSync(COOKIES_PATH)) {
-    const cookiesString = fs.readFileSync(COOKIES_PATH, 'utf-8');
-    const cookies = JSON.parse(cookiesString);
-    await page.setCookie(...cookies);
-    console.log('[INFO] Cookies загружены');
-  } else {
-    console.log('[WARN] cookies.json не найден, залогинься вручную');
+  if (!username || !message) {
+    return res.status(400).json({ error: 'username и message обязательны' });
   }
 
-  // Маршрут для приёма POST с username и message
-  app.post('/', async (req, res) => {
-    const { username, message } = req.body;
-    console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: false,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      defaultViewport: null,
+    });
 
-    try {
-      const profileUrl = `https://www.instagram.com/${username}/`;
-      await page.goto(profileUrl, { waitUntil: 'networkidle2' });
+    const page = await browser.newPage();
 
-      // Подождать, чтобы UI прогрузился
-      await page.waitForTimeout(3000);
-
-      // Ищем кнопку "Message" более точно
-      const buttons = await page.$$('button, a, div');
-      let messageButton = null;
-
-      for (const btn of buttons) {
-        const [text, ariaLabel, title] = await Promise.all([
-          page.evaluate(el => el.textContent.trim(), btn).catch(() => ''),
-          page.evaluate(el => el.getAttribute('aria-label'), btn).catch(() => ''),
-          page.evaluate(el => el.getAttribute('title'), btn).catch(() => ''),
-        ]);
-
-        console.log('[DEBUG] Кнопка:', { text, ariaLabel, title });
-
-        if (
-          text === 'Message' ||
-          ariaLabel === 'Message' ||
-          title === 'Message'
-        ) {
-          messageButton = btn;
-          break;
-        }
-      }
-
-      if (!messageButton) {
-        throw new Error('Кнопка "Message" не найдена.');
-      }
-
-      await messageButton.click();
-
-      // Ждем появления textarea для ввода сообщения
-      await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
-      await page.type('textarea', message, { delay: 50 });
-      await page.keyboard.press('Enter');
-
-      console.log('[SUCCESS] Сообщение успешно отправлено!');
-      res.send('OK');
-    } catch (error) {
-      console.error('[FATAL ERROR]', error);
-      res.status(500).send(error.message);
+    const cookiesPath = './cookies.json';
+    if (!fs.existsSync(cookiesPath)) {
+      return res.status(500).json({ error: 'Файл cookies.json не найден' });
     }
-  });
 
-  app.listen(3000, () => {
-    console.log('Server started on http://localhost:3000');
-  });
-})();
+    const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
+    await page.setCookie(...cookies);
+    console.log('[INFO] Cookies загружены');
+
+    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
+    console.log('[INFO] Страница пользователя загружена');
+
+    // Ждем немного, чтобы элементы успели отобразиться
+    await page.waitForTimeout(3000);
+
+    // Поиск кнопки Message по тексту, aria-label или title
+    const buttons = await page.$$('button');
+
+    let messageButton = null;
+
+    for (const button of buttons) {
+      const text = await page.evaluate(el => el.textContent.trim(), button);
+      const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label'), button);
+      const title = await page.evaluate(el => el.getAttribute('title'), button);
+
+      console.log('[DEBUG] Кнопка:', { text, ariaLabel, title });
+
+      if (
+        text === 'Message' ||
+        ariaLabel === 'Message' ||
+        title === 'Message'
+      ) {
+        messageButton = button;
+        break;
+      }
+    }
+
+    if (!messageButton) {
+      throw new Error('Кнопка "Message" не найдена.');
+    }
+
+    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
+    await messageButton.click();
+
+    // Ждем появление textarea для ввода сообщения (иногда селектор может отличаться)
+    try {
+      await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
+    } catch {
+      // Иногда Instagram использует div[contenteditable="true"]
+      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 10000 });
+    }
+
+    // Печатаем сообщение в поле
+    const inputSelector = await page.$('textarea') ? 'textarea' : 'div[contenteditable="true"]';
+    await page.focus(inputSelector);
+    await page.keyboard.type(message, { delay: 50 });
+    await page.keyboard.press('Enter');
+
+    console.log('[INFO] Сообщение отправлено');
+
+    res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
+  } catch (error) {
+    console.error('[FATAL ERROR]', error);
+    res.status(500).json({ error: error.message });
+  } finally {
+    if (browser) await browser.close();
+  }
+});
+
+const PORT = 10000;
+app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
