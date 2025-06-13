@@ -1,38 +1,76 @@
+const express = require('express');
 const puppeteer = require('puppeteer');
 
-(async () => {
-  const browser = await puppeteer.launch({ headless: false }); // для наглядности
-  const page = await browser.newPage();
+const app = express();
+app.use(express.json());
 
-  const username = 'nick_smartposter'; // заменяй на нужного
-  const profileUrl = `https://www.instagram.com/${username}/`;
+let browser;
 
-  await page.goto(profileUrl, { waitUntil: 'networkidle2' });
+async function initBrowser() {
+  if (!browser) {
+    browser = await puppeteer.launch({ headless: false });
+  }
+  return browser;
+}
 
-  // Подождать появления кнопок с role="button"
-  await page.waitForSelector('div[role="button"]');
+app.post('/send-dm', async (req, res) => {
+  const { username, message } = req.body;
 
-  // Найти кнопку "Message" и нажать
-  const buttons = await page.$$('div[role="button"]');
-  let messageBtn = null;
+  if (!username || !message) {
+    return res.status(400).json({ error: 'username и message обязательны' });
+  }
 
-  for (const btn of buttons) {
-    const text = await (await btn.getProperty('textContent')).jsonValue();
-    if (text.trim() === 'Message') {
-      messageBtn = btn;
-      break;
+  try {
+    const browser = await initBrowser();
+    const page = await browser.newPage();
+
+    const profileUrl = `https://www.instagram.com/${username}/`;
+    console.info(`[INFO] Открываем профиль ${profileUrl}`);
+    await page.goto(profileUrl, { waitUntil: 'networkidle2' });
+
+    // Ждем появления кнопок
+    await page.waitForSelector('div[role="button"]', { timeout: 10000 });
+
+    // Ищем кнопку "Message"
+    const buttons = await page.$$('div[role="button"]');
+    let messageBtn = null;
+
+    for (const btn of buttons) {
+      const text = await (await btn.getProperty('textContent')).jsonValue();
+      if (text.trim() === 'Message') {
+        messageBtn = btn;
+        break;
+      }
     }
+
+    if (!messageBtn) {
+      throw new Error('Кнопка "Message" не найдена');
+    }
+
+    console.info('[INFO] Нажимаем кнопку "Message"');
+    await messageBtn.click();
+
+    // Ждем появления textarea или input для сообщения (примерно)
+    await page.waitForSelector('textarea', { timeout: 5000 });
+
+    // Вводим сообщение
+    await page.type('textarea', message, { delay: 50 });
+
+    // Отправляем сообщение нажатием Enter
+    await page.keyboard.press('Enter');
+
+    console.info(`[INFO] Сообщение отправлено пользователю ${username}`);
+
+    await page.close();
+
+    res.json({ status: 'success', message: `Сообщение отправлено пользователю ${username}` });
+  } catch (error) {
+    console.error('[FATAL ERROR]', error);
+    res.status(500).json({ error: error.message });
   }
+});
 
-  if (!messageBtn) {
-    throw new Error('Кнопка "Message" не найдена');
-  }
-
-  await messageBtn.click();
-
-  console.log('Кнопка "Message" нажата!');
-
-  // Далее можно добавить отправку сообщения и т.п.
-
-  // await browser.close();
-})();
+const PORT = 10000;
+app.listen(PORT, () => {
+  console.log(`Server started on http://localhost:${PORT}`);
+});
