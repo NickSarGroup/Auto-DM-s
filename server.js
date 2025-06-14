@@ -83,14 +83,14 @@ app.post('/send-dm', async (req, res) => {
         const menuButtons = await page.$$(`${menuSelector} *`);
 
         for (const item of menuButtons) {
-  const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
+          const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
 
-  if (itemText.includes('send message')) {
-    console.log('[INFO] Найдена кнопка "Send message" через резервный способ');
-    messageButton = item;
-    break;
-  }
-}
+          if (itemText.includes('send message')) {
+            console.log('[INFO] Найдена кнопка "Send message" через резервный способ');
+            messageButton = item;
+            break;
+          }
+        }
 
         if (messageButton) break;
 
@@ -107,23 +107,25 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
-// Скипаем всплывающее окно "Turn on notifications"
-try {
-  console.log('[INFO] Проверяем наличие окна "Turn on notifications"');
-  await page.waitForSelector('div[role="dialog"]', { timeout: 5000 });
+    // Скипаем всплывающее окно "Turn on notifications"
+    try {
+      console.log('[INFO] Проверяем наличие окна "Turn on notifications"');
+      await page.waitForSelector('div[role="dialog"]', { timeout: 5000 });
 
-  const notNowButton = await page.$x("//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'not now')]");
+      const notNowButton = await page.$x(
+        "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'not now')]"
+      );
 
-  if (notNowButton.length > 0) {
-    console.log('[INFO] Обнаружена кнопка "Not Now", нажимаем');
-    await notNowButton[0].click();
-    await randomDelay(500, 1000);
-  } else {
-    console.log('[INFO] Кнопка "Not Now" не найдена');
-  }
-} catch (e) {
-  console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
-}
+      if (notNowButton.length > 0) {
+        console.log('[INFO] Обнаружена кнопка "Not Now", нажимаем');
+        await notNowButton[0].click();
+        await randomDelay(500, 1000);
+      } else {
+        console.log('[INFO] Кнопка "Not Now" не найдена');
+      }
+    } catch (e) {
+      console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
+    }
 
     let inputSelector;
     try {
