@@ -18,12 +18,12 @@ async function sendDM(username, message) {
     console.log('[INFO] Cookies загружены');
   }
 
-  // Открываем Instagram профиль
+  // Открываем профиль пользователя
   const profileUrl = `https://www.instagram.com/${username}/`;
   await page.goto(profileUrl, { waitUntil: 'networkidle2' });
   console.log('[INFO] Страница пользователя загружена');
 
-  // Ищем кнопки на странице
+  // Лог всех кнопок на странице
   const buttons = await page.$$eval('button, a', elements =>
     elements.map(el => {
       return {
@@ -38,25 +38,23 @@ async function sendDM(username, message) {
     console.log(`[DEBUG] Кнопка: ${btn.text} aria-label: ${btn.ariaLabel ?? ''} title: ${btn.title ?? ''}`);
   }
 
-  // Ищем кнопку Options / More
+  // Нажимаем на три точки (Options / More)
   const optionsHandle = await page.$x("//button[contains(., 'Options') or contains(., 'More')]");
   if (optionsHandle.length > 0) {
     console.log('[INFO] Пробуем нажать на три точки (Options / More)');
     await optionsHandle[0].click();
-
-    // Пауза, чтобы меню открылось
     await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Ищем кнопку Send Message после открытия меню
-    const sendMessageButton = await page.$x("//button[contains(., 'Send message') or contains(., 'Message')]");
-    if (sendMessageButton.length > 0) {
-      console.log('[INFO] Кнопка "Send message" найдена, кликаем по ней');
-      await sendMessageButton[0].click();
-    } else {
-      throw new Error('Кнопка "Message" или "Send message" не найдена после открытия меню.');
-    }
   } else {
     throw new Error('Кнопка "Options" не найдена.');
+  }
+
+  // Ищем кнопку "Send message"
+  const sendMessageButton = await page.$x("//button[contains(., 'Send message') or contains(., 'Message')]");
+  if (sendMessageButton.length > 0) {
+    console.log('[INFO] Кнопка "Send message" найдена, кликаем по ней');
+    await sendMessageButton[0].click();
+  } else {
+    throw new Error('Кнопка "Message" или "Send message" не найдена после открытия меню.');
   }
 
   // Ждём появления поля ввода
@@ -64,6 +62,7 @@ async function sendDM(username, message) {
     throw new Error('Поле ввода сообщения не появилось.');
   });
 
+  // Вводим сообщение и отправляем
   await page.type('textarea', message);
   await page.keyboard.press('Enter');
 
@@ -88,7 +87,7 @@ app.post('/send', async (req, res) => {
   }
 });
 
-const PORT = 3000;
+const PORT = 10000;
 app.listen(PORT, () => {
   console.log(`[SERVER] Сервер запущен на порту ${PORT}`);
 });
