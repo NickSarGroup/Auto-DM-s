@@ -49,35 +49,38 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(500, 1000);
 
-    // Ищем кнопку Message / Send message, либо по тексту, либо по aria-label
+    // Функция для фильтрации кнопок по нужным текстам без "messages" в названии
+    const isValidMessageButton = (text, aria) => {
+      const t = text.toLowerCase();
+      const a = aria.toLowerCase();
+      // только ровно "message" или "send message"
+      return (t === 'message' || t === 'send message' || a === 'message' || a === 'send message');
+    };
+
     const buttons = await page.$$('div[role="button"]');
     let messageButton = null;
 
     for (const btn of buttons) {
-      const text = await page.evaluate(el => el.textContent.trim().toLowerCase(), btn);
-      const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label')?.toLowerCase() || '', btn);
+      const text = await page.evaluate(el => el.textContent.trim(), btn);
+      const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label') || '', btn);
 
       console.log('[DEBUG] Кнопка:', text, 'aria-label:', ariaLabel);
 
-      if (
-        text === 'message' ||
-        text === 'send message' ||
-        ariaLabel === 'message' ||
-        ariaLabel === 'send message'
-      ) {
+      if (isValidMessageButton(text, ariaLabel)) {
         messageButton = btn;
         break;
       }
     }
 
     if (!messageButton) {
-      console.log('[INFO] Пробуем нажать на три точки (Options)');
+      console.log('[INFO] Пробуем нажать на три точки (Options / More)');
       for (const btn of buttons) {
         const text = await page.evaluate(el => el.textContent.trim().toLowerCase(), btn);
         if (text === 'options' || text === 'more') {
           await btn.click();
           await randomDelay(500, 1000);
 
+          // Меню может иметь разную структуру, пробуем разные селекторы
           const menuItems = await page.$$('div[role="dialog"] [role="button"], div[role="menuitem"]');
           for (const item of menuItems) {
             const itemText = await page.evaluate(el => el.textContent.trim().toLowerCase(), item);
@@ -87,7 +90,7 @@ app.post('/send-dm', async (req, res) => {
               break;
             }
           }
-          break;
+          if (messageButton) break;
         }
       }
     }
@@ -96,18 +99,20 @@ app.post('/send-dm', async (req, res) => {
       throw new Error('Кнопка "Message" или "Send message" не найдена.');
     }
 
-    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
+    console.log('[INFO] Кликаем по кнопке для отправки сообщения');
     await messageButton.click();
 
+    // Ждём появления поля ввода, либо textarea, либо contenteditable div
     try {
       await page.waitForSelector('textarea, div[contenteditable="true"]', { visible: true, timeout: 8000 });
     } catch {
-      throw new Error('Поле ввода сообщения не появилось.');
+      throw new Error('Поле ввода сообщения не появилось после клика по кнопке.');
     }
 
-    const inputSelector = await page.$('textarea') ? 'textarea' : 'div[contenteditable="true"]';
+    const inputSelector = (await page.$('textarea')) ? 'textarea' : 'div[contenteditable="true"]';
     await page.focus(inputSelector);
 
+    // Вставляем сообщение через clipboard API
     await page.evaluate(async (msg) => {
       await navigator.clipboard.writeText(msg);
     }, message);
@@ -122,7 +127,7 @@ app.post('/send-dm', async (req, res) => {
 
     await page.keyboard.press('Enter');
 
-    console.log('[INFO] Сообщение отправлено');
+    console.log('[INFO] Сообщение успешно отправлено');
 
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
