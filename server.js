@@ -49,23 +49,27 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(500, 1000);
 
+    // Ищем кнопку Message / Send message, либо по тексту, либо по aria-label
     const buttons = await page.$$('div[role="button"]');
     let messageButton = null;
 
     for (const btn of buttons) {
       const text = await page.evaluate(el => el.textContent.trim().toLowerCase(), btn);
-      console.log('[DEBUG] Кнопка:', text);
+      const ariaLabel = await page.evaluate(el => el.getAttribute('aria-label')?.toLowerCase() || '', btn);
+
+      console.log('[DEBUG] Кнопка:', text, 'aria-label:', ariaLabel);
+
       if (
-        text.includes('message') ||
-        text.includes('direct messages') ||
-        text.includes('send message')
+        text === 'message' ||
+        text === 'send message' ||
+        ariaLabel === 'message' ||
+        ariaLabel === 'send message'
       ) {
         messageButton = btn;
         break;
       }
     }
 
-    // Если кнопку не нашли — пробуем через три точки
     if (!messageButton) {
       console.log('[INFO] Пробуем нажать на три точки (Options)');
       for (const btn of buttons) {
@@ -73,11 +77,12 @@ app.post('/send-dm', async (req, res) => {
         if (text === 'options' || text === 'more') {
           await btn.click();
           await randomDelay(500, 1000);
+
           const menuItems = await page.$$('div[role="dialog"] [role="button"], div[role="menuitem"]');
           for (const item of menuItems) {
             const itemText = await page.evaluate(el => el.textContent.trim().toLowerCase(), item);
             console.log('[DEBUG] Пункт меню:', itemText);
-            if (itemText.includes('send message')) {
+            if (itemText === 'send message') {
               messageButton = item;
               break;
             }
@@ -88,23 +93,21 @@ app.post('/send-dm', async (req, res) => {
     }
 
     if (!messageButton) {
-      throw new Error('Кнопка "Message" или "Send Message" не найдена.');
+      throw new Error('Кнопка "Message" или "Send message" не найдена.');
     }
 
     console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
     await messageButton.click();
 
-    // Ждем появления поля ввода
     try {
       await page.waitForSelector('textarea, div[contenteditable="true"]', { visible: true, timeout: 8000 });
-    } catch (err) {
+    } catch {
       throw new Error('Поле ввода сообщения не появилось.');
     }
 
     const inputSelector = await page.$('textarea') ? 'textarea' : 'div[contenteditable="true"]';
     await page.focus(inputSelector);
 
-    // Копируем текст в буфер
     await page.evaluate(async (msg) => {
       await navigator.clipboard.writeText(msg);
     }, message);
