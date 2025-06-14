@@ -5,7 +5,7 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-// Быстрая случайная задержка, минимальная, чтобы не быть "роботом"
+// Быстрая случайная задержка
 const randomDelay = (min, max) => new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
 app.post('/send-dm', async (req, res) => {
@@ -31,7 +31,6 @@ app.post('/send-dm', async (req, res) => {
 
     const page = await browser.newPage();
 
-    // Опционально: меняем user-agent чтобы быть менее подозрительным
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
 
     const cookiesPath = './cookies.json';
@@ -44,17 +43,15 @@ app.post('/send-dm', async (req, res) => {
     console.log('[INFO] Cookies загружены');
 
     const profileUrl = `https://www.instagram.com/${username}/`;
-    // Загружаем страницу с более быстрым событием загрузки
     await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
     console.log('[INFO] Страница пользователя загружена');
 
-    // Очень короткая задержка, просто чтобы страница стабилизировалась
     await randomDelay(500, 1000);
 
     // Ищем кнопку "Message"
     const buttons = await page.$$('div[role="button"]');
-
     let messageButton = null;
+
     for (const btn of buttons) {
       const text = await page.evaluate(el => el.textContent.trim(), btn);
       console.log('[DEBUG] Кнопка:', text);
@@ -64,14 +61,38 @@ app.post('/send-dm', async (req, res) => {
       }
     }
 
+    // Если кнопка Message не найдена — пробуем через три точки
     if (!messageButton) {
-      throw new Error('Кнопка "Message" не найдена.');
+      console.log('[INFO] Кнопка "Message" не найдена. Пробуем через три точки...');
+
+      const moreOptionsButton = await page.$('svg[aria-label="Options"], div[role="button"]:has(svg[aria-label="More options"])');
+      if (!moreOptionsButton) {
+        throw new Error('Кнопка с тремя точками не найдена');
+      }
+
+      await moreOptionsButton.click();
+      await page.waitForSelector('div[role="dialog"]', { visible: true, timeout: 5000 });
+
+      const dialogButtons = await page.$$('div[role="dialog"] div[role="button"]');
+
+      for (const btn of dialogButtons) {
+        const text = await page.evaluate(el => el.textContent.trim(), btn);
+        console.log('[DEBUG] В меню:', text);
+        if (text === 'Send message') {
+          messageButton = btn;
+          break;
+        }
+      }
+
+      if (!messageButton) {
+        throw new Error('Опция "Send message" не найдена в меню с тремя точками');
+      }
     }
 
-    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
+    console.log('[INFO] Кликаем по кнопке отправки сообщения');
     await messageButton.click();
 
-    // Ждем появление поля ввода сообщения
+    // Ждем появления поля ввода
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
     } catch {
@@ -81,27 +102,23 @@ app.post('/send-dm', async (req, res) => {
     const inputSelector = await page.$('textarea') ? 'textarea' : 'div[contenteditable="true"]';
     await page.focus(inputSelector);
 
-    // Вставляем сообщение через clipboard API + Ctrl+V
-    // Используем evaluate для записи в буфер обмена браузера
+    // Вставка сообщения через буфер обмена
     await page.evaluate(async (msg) => {
       await navigator.clipboard.writeText(msg);
     }, message);
 
-    // Клик по полю, чтобы точно быть в фокусе
     await page.click(inputSelector);
 
-    // Ctrl+V — вставка текста
     await page.keyboard.down('Control');
     await page.keyboard.press('V');
     await page.keyboard.up('Control');
 
-    await randomDelay(200, 400); // Короткая пауза перед отправкой
-
+    await randomDelay(200, 400);
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
-
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
+
   } catch (error) {
     console.error('[FATAL ERROR]', error);
     res.status(500).json({ error: error.message });
