@@ -107,6 +107,24 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
+// Скипаем всплывающее окно "Turn on Notifications"
+try {
+  console.log('[INFO] Проверяем наличие окна "Turn on Notifications"');
+  await page.waitForSelector('div[role="dialog"]', { timeout: 5000 });
+
+  const notNowButton = await page.$x("//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'not now')]");
+
+  if (notNowButton.length > 0) {
+    console.log('[INFO] Обнаружена кнопка "Not Now", нажимаем');
+    await notNowButton[0].click();
+    await randomDelay(500, 1000);
+  } else {
+    console.log('[INFO] Кнопка "Not Now" не найдена');
+  }
+} catch (e) {
+  console.log('[INFO] Окно "Turn on Notifications" не появилось — продолжаем');
+}
+
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
