@@ -107,18 +107,24 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
-    // Ищем кнопку "Not Now" сразу после открытия диалога
-    try {
-      console.log('[INFO] Ищем кнопку "Not Now"');
-      const notNowButton = await page.$x(
-        "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'not now')]"
-      );
+    // Поиск "Not Now" или аналогов
+    const notNowVariants = ['not now', 'сейчас не нужно', 'later', 'skip'];
+    let notNowClicked = false;
 
-      if (notNowButton.length > 0) {
-        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
-        await notNowButton[0].click();
-        await randomDelay(500, 1000);
-      } else {
+    try {
+      for (const variant of notNowVariants) {
+        const xpath = `//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), "${variant}")]`;
+        const buttons = await page.$x(xpath);
+        if (buttons.length > 0) {
+          await buttons[0].click();
+          console.log(`[INFO] Нажата кнопка "${variant}"`);
+          await randomDelay(500, 1000);
+          notNowClicked = true;
+          break;
+        }
+      }
+
+      if (!notNowClicked) {
         console.log('[INFO] Кнопка "Not Now" не найдена — продолжаем');
       }
     } catch (e) {
