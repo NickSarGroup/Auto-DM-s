@@ -66,7 +66,7 @@ app.post('/send-dm', async (req, res) => {
       if (['more', 'options'].includes(textLower) || ['more', 'options'].includes(ariaLower) || ['more', 'options'].includes(titleLower)) {
         console.log('[INFO] Пробуем нажать на три точки (Options / More)');
         await btn.click();
-        await page.waitForTimeout(1000);
+        await randomDelay(800, 1200);
 
         const menuSelector = 'div[role="dialog"], div[role="menu"]';
         await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
