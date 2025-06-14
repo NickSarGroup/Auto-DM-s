@@ -5,10 +5,9 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
 // Быстрая случайная задержка
-const randomDelay = (min, max) => wait(Math.floor(Math.random() * (max - min + 1)) + min);
+const randomDelay = (min, max) => new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms)); // ← исправленная пауза
 
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
@@ -32,8 +31,6 @@ app.post('/send-dm', async (req, res) => {
     });
 
     const page = await browser.newPage();
-
-    // Меняем user-agent
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
 
     const cookiesPath = './cookies.json';
@@ -51,9 +48,7 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(500, 1000);
 
-    // Ищем кнопки с ролью button
     const buttons = await page.$$('div[role="button"], button');
-
     let messageButton = null;
 
     for (const btn of buttons) {
@@ -77,7 +72,7 @@ app.post('/send-dm', async (req, res) => {
       if (textLower === 'options' || textLower === 'more' || ariaLower === 'options' || ariaLower === 'more' || titleLower === 'options' || titleLower === 'more') {
         console.log('[INFO] Нажимаем на три точки (Options / More)');
         await btn.click();
-        await wait(1000);
+        await wait(1000); // ← исправлено
 
         const menuSelector = 'div[role="dialog"], div[role="menu"]';
         await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
@@ -106,7 +101,7 @@ app.post('/send-dm', async (req, res) => {
         }
 
         await page.keyboard.press('Escape');
-        await wait(500);
+        await wait(500); // ← исправлено
       }
     }
 
@@ -133,13 +128,11 @@ app.post('/send-dm', async (req, res) => {
     }, message);
 
     await page.click(inputSelector);
-
     await page.keyboard.down('Control');
     await page.keyboard.press('V');
     await page.keyboard.up('Control');
 
     await randomDelay(200, 400);
-
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
