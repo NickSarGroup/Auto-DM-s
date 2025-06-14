@@ -5,10 +5,12 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-const randomDelay = (min, max) => new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
+const randomDelay = (min, max) =>
+  new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
+
   console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
 
   if (!username || !message) {
@@ -28,7 +30,9 @@ app.post('/send-dm', async (req, res) => {
     });
 
     const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+    );
 
     const cookiesPath = './cookies.json';
     if (!fs.existsSync(cookiesPath)) {
@@ -42,32 +46,68 @@ app.post('/send-dm', async (req, res) => {
     const profileUrl = `https://www.instagram.com/${username}/`;
     await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
     console.log('[INFO] Страница пользователя загружена');
-    await randomDelay(500, 1000);
 
-    // Ищем кнопку Message напрямую
-    let messageButtons = await page.$x("//button[contains(text(), 'Message')]");
-    if (messageButtons.length === 0) {
-      console.log('[INFO] Кнопка Message не найдена напрямую, пробуем через три точки');
+    await randomDelay(800, 1400);
 
-      const optionsButton = await page.$("svg[aria-label='Options']");
-      if (optionsButton) {
-        await optionsButton.click();
+    const buttons = await page.$$('div[role="button"], button');
+
+    let messageButton = null;
+
+    for (const btn of buttons) {
+      const [text, ariaLabel, title] = await Promise.all([
+        page.evaluate(el => el.textContent?.trim() || '', btn).catch(() => ''),
+        page.evaluate(el => el.getAttribute('aria-label') || '', btn).catch(() => ''),
+        page.evaluate(el => el.getAttribute('title') || '', btn).catch(() => ''),
+      ]);
+
+      const textLower = text.toLowerCase();
+      const ariaLower = ariaLabel.toLowerCase();
+      const titleLower = title.toLowerCase();
+
+      console.log('[DEBUG] Кнопка:', text, 'aria:', ariaLabel, 'title:', title);
+
+      if (textLower === 'message' || ariaLower === 'message' || titleLower === 'message') {
+        messageButton = btn;
+        break;
+      }
+
+      if (['options', 'more'].includes(textLower) || ['options', 'more'].includes(ariaLower) || ['options', 'more'].includes(titleLower)) {
+        console.log('[INFO] Нажимаем на три точки (Options / More)');
+        await btn.click();
         await page.waitForTimeout(1000);
 
-        await page.waitForXPath("//button[contains(text(), 'Message')]", { timeout: 5000 }).catch(() => {});
-        messageButtons = await page.$x("//button[contains(text(), 'Message')]");
+        const menuSelector = 'div[role="dialog"], div[role="menu"]';
+        await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
+        const menuButtons = await page.$$(menuSelector + ' [role="button"], ' + menuSelector + ' button, ' + menuSelector + ' div[role="menuitem"]');
 
-        if (messageButtons.length === 0) {
-          console.log('[ERROR] Кнопка Message не найдена даже в меню');
-          throw new Error('Кнопка Message не найдена');
+        for (const item of menuButtons) {
+          const [itemText, itemAria, itemTitle] = await Promise.all([
+            page.evaluate(el => el.textContent?.trim().toLowerCase() || '', item).catch(() => ''),
+            page.evaluate(el => el.getAttribute('aria-label') || '', item).catch(() => ''),
+            page.evaluate(el => el.getAttribute('title') || '', item).catch(() => ''),
+          ]);
+
+          console.log('[DEBUG] Пункт меню:', itemText, 'aria:', itemAria, 'title:', itemTitle);
+
+          if (itemText === 'send message' || itemAria.toLowerCase() === 'send message' || itemTitle.toLowerCase() === 'send message') {
+            messageButton = item;
+            break;
+          }
         }
-      } else {
-        throw new Error('Кнопка с тремя точками не найдена');
+
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(500);
+
+        if (messageButton) break;
       }
     }
 
-    console.log('[INFO] Кнопка Message найдена, кликаем');
-    await messageButtons[0].click();
+    if (!messageButton) {
+      throw new Error('Кнопка "Message" или "Send message" не найдена.');
+    }
+
+    console.log('[INFO] Кликаем по кнопке для открытия чата');
+    await messageButton.click();
 
     let inputSelector;
     try {
@@ -79,16 +119,22 @@ app.post('/send-dm', async (req, res) => {
     }
 
     await page.focus(inputSelector);
-    await page.evaluate(async (msg) => { await navigator.clipboard.writeText(msg); }, message);
+
+    await page.evaluate(async (msg) => {
+      await navigator.clipboard.writeText(msg);
+    }, message);
+
     await page.click(inputSelector);
     await page.keyboard.down('Control');
     await page.keyboard.press('V');
     await page.keyboard.up('Control');
+
     await randomDelay(200, 400);
     await page.keyboard.press('Enter');
 
-    console.log('[INFO] Сообщение отправлено');
-    res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
+    console.log('[INFO] Сообщение успешно отправлено');
+
+    res.json({ status: 'ok', message: 'Сообщение отправлено' });
   } catch (error) {
     console.error('[FATAL ERROR]', error);
     res.status(500).json({ error: error.message });
