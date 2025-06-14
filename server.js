@@ -107,20 +107,19 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
-    // ✅ Обработка окна "Turn on notifications" через точный селектор по классу кнопки "Not Now"
+    // Обработка окна "Turn on notifications" с ожиданием кнопки "Not Now"
     try {
-      console.log('[INFO] Проверяем наличие окна "Turn on notifications"...');
+      console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
 
-      const notNowButton = await page.$('button._a9--._ap36._a9_1');
+      const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
+
       if (notNowButton) {
-        console.log('[INFO] Кнопка "Not Now" найдена по классу, нажимаем');
+        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButton.click();
         await randomDelay(500, 800);
-      } else {
-        console.log('[INFO] Кнопка "Not Now" не найдена — продолжаем');
       }
     } catch (e) {
-      console.log('[WARN] Ошибка при обработке окна "Turn on notifications" — продолжаем', e);
+      console.log('[INFO] Окно "Turn on notifications" с кнопкой "Not Now" не появилось — продолжаем');
     }
 
     // Пишем сообщение
