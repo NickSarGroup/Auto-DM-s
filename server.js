@@ -5,6 +5,33 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
+const LOG_PATH = './sent-log.json';
+const MAX_PER_HOUR = 15;
+const DELAY_MIN = 5000; // 5 сек
+const DELAY_MAX = 8000; // 8 сек
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getRandomDelay() {
+  return Math.floor(Math.random() * (DELAY_MAX - DELAY_MIN + 1)) + DELAY_MIN;
+}
+
+function readLog() {
+  if (!fs.existsSync(LOG_PATH)) return [];
+  return JSON.parse(fs.readFileSync(LOG_PATH, 'utf8'));
+}
+
+function writeLog(logs) {
+  fs.writeFileSync(LOG_PATH, JSON.stringify(logs, null, 2));
+}
+
+function filterLastHourLogs(logs) {
+  const oneHourAgo = Date.now() - 60 * 60 * 1000;
+  return logs.filter(log => log.timestamp > oneHourAgo);
+}
+
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
 
@@ -13,6 +40,23 @@ app.post('/send-dm', async (req, res) => {
   if (!username || !message) {
     return res.status(400).json({ error: 'username и message обязательны' });
   }
+
+  // === АНТИБАН ===
+  let logs = readLog();
+  logs = filterLastHourLogs(logs);
+
+  if (logs.length >= MAX_PER_HOUR) {
+    return res.status(429).json({ error: `Лимит ${MAX_PER_HOUR} сообщений в час достигнут.` });
+  }
+
+  const recentToUser = logs.find(l => l.username === username);
+  if (recentToUser) {
+    return res.status(429).json({ error: 'Этому пользователю уже отправляли в течение часа.' });
+  }
+
+  const delayMs = getRandomDelay();
+  console.log(`[ANTIBAN] Задержка перед отправкой: ${delayMs / 1000} секунд`);
+  await delay(delayMs);
 
   let browser;
   try {
@@ -33,28 +77,12 @@ app.post('/send-dm', async (req, res) => {
     await page.setCookie(...cookies);
     console.log('[INFO] Cookies загружены');
 
-    const profileUrl = `https://www.instagram.com/${username}/`;
-    await page.goto(profileUrl, { waitUntil: 'networkidle2' });
+    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
     console.log('[INFO] Страница пользователя загружена');
 
-    // Заменяем waitForTimeout
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await delay(3000);
 
-    // Ищем кнопку "Message" среди div с role="button"
-    const buttons = await page.$$('div[role="button"]');
-
-    let messageButton = null;
-
-    for (const btn of buttons) {
-      const text = await page.evaluate(el => el.textContent.trim(), btn);
-
-      console.log('[DEBUG] Кнопка:', text);
-
-      if (text === 'Message') {
-        messageButton = btn;
-        break;
-      }
-    }
+    const messageButton = await page.$('div[role="button"]:has-text("Message")');
 
     if (!messageButton) {
       throw new Error('Кнопка "Message" не найдена.');
@@ -64,18 +92,21 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
 
     try {
-      await page.waitForSelector('textarea', { visible: true, timeout: 10000 });
-    } catch {
-      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 10000 });
+      await page.waitForSelector('textarea, div[contenteditable="true"]', { visible: true, timeout: 10000 });
+    } catch (e) {
+      throw new Error('Поле ввода не найдено.');
     }
 
     const inputSelector = await page.$('textarea') ? 'textarea' : 'div[contenteditable="true"]';
-
     await page.focus(inputSelector);
     await page.keyboard.type(message, { delay: 50 });
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
+
+    // Логируем
+    logs.push({ username, timestamp: Date.now() });
+    writeLog(filterLastHourLogs(logs)); // Сохраняем только последние записи
 
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
