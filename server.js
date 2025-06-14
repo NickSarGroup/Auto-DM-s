@@ -1,135 +1,94 @@
-const express = require('express');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
-
+const express = require('express');
 const app = express();
 app.use(express.json());
 
-const randomDelay = (min, max) => new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
+const COOKIES_PATH = './cookies.json';
 
-app.post('/send-dm', async (req, res) => {
-  const { username, message } = req.body;
+async function sendDM(username, message) {
+  const browser = await puppeteer.launch({ headless: false });
+  const page = await browser.newPage();
 
-  console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
-
-  if (!username || !message) {
-    return res.status(400).json({ error: 'username и message обязательны' });
-  }
-
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      headless: false,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled'
-      ],
-      defaultViewport: null,
-    });
-
-    const page = await browser.newPage();
-
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
-
-    const cookiesPath = './cookies.json';
-    if (!fs.existsSync(cookiesPath)) {
-      return res.status(500).json({ error: 'Файл cookies.json не найден' });
-    }
-
-    const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
+  // Загружаем куки
+  if (fs.existsSync(COOKIES_PATH)) {
+    const cookiesString = fs.readFileSync(COOKIES_PATH);
+    const cookies = JSON.parse(cookiesString);
     await page.setCookie(...cookies);
     console.log('[INFO] Cookies загружены');
+  }
 
-    const profileUrl = `https://www.instagram.com/${username}/`;
-    await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
-    console.log('[INFO] Страница пользователя загружена');
+  // Открываем Instagram профиль
+  const profileUrl = `https://www.instagram.com/${username}/`;
+  await page.goto(profileUrl, { waitUntil: 'networkidle2' });
+  console.log('[INFO] Страница пользователя загружена');
 
-    await randomDelay(500, 1000);
+  // Ищем кнопки на странице
+  const buttons = await page.$$eval('button, a', elements =>
+    elements.map(el => {
+      return {
+        text: el.innerText?.trim().toLowerCase(),
+        ariaLabel: el.getAttribute('aria-label')?.toLowerCase(),
+        title: el.getAttribute('title')?.toLowerCase()
+      };
+    })
+  );
 
-    // Ищем кнопки подходящие
-    const buttons = await page.$$('div[role="button"]');
+  for (const btn of buttons) {
+    console.log(`[DEBUG] Кнопка: ${btn.text} aria-label: ${btn.ariaLabel ?? ''} title: ${btn.title ?? ''}`);
+  }
 
-    let messageButton = null;
-    let optionsButton = null;
+  // Ищем кнопку Options / More
+  const optionsHandle = await page.$x("//button[contains(., 'Options') or contains(., 'More')]");
+  if (optionsHandle.length > 0) {
+    console.log('[INFO] Пробуем нажать на три точки (Options / More)');
+    await optionsHandle[0].click();
 
-    for (const btn of buttons) {
-      const text = await page.evaluate(el => el.textContent.trim().toLowerCase(), btn);
-      const aria = await page.evaluate(el => el.getAttribute('aria-label')?.toLowerCase() || '', btn);
-      const title = await page.evaluate(el => el.getAttribute('title')?.toLowerCase() || '', btn);
+    // Пауза, чтобы меню открылось
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-      //console.log(`[DEBUG] Кнопка: ${text} aria-label: ${aria} title: ${title}`);
-
-      if (text === 'message' || aria === 'message' || title === 'message' || text === 'send message' || aria === 'send message' || title === 'send message') {
-        messageButton = btn;
-        break;
-      }
-
-      // Запомним кнопку Options/More
-      if (text === 'options' || aria === 'options' || title === 'options' || text === 'more' || aria === 'more' || title === 'more') {
-        optionsButton = btn;
-      }
-    }
-
-    if (!messageButton && optionsButton) {
-      console.log('[INFO] Пробуем нажать на три точки (Options / More)');
-      await optionsButton.click();
-      await new Promise(r => setTimeout(r, 1000));
-
-      // После открытия меню ищем там кнопку Send Message
-      const menuButtons = await page.$$('div[role="menuitem"]');
-      for (const mBtn of menuButtons) {
-        const mText = await page.evaluate(el => el.textContent.trim().toLowerCase(), mBtn);
-        if (mText === 'send message') {
-          messageButton = mBtn;
-          break;
-        }
-      }
-      if (!messageButton) {
-        throw new Error('Кнопка "Message" или "Send message" не найдена.');
-      }
-      await messageButton.click();
-    } else if (messageButton) {
-      console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
-      await messageButton.click();
+    // Ищем кнопку Send Message после открытия меню
+    const sendMessageButton = await page.$x("//button[contains(., 'Send message') or contains(., 'Message')]");
+    if (sendMessageButton.length > 0) {
+      console.log('[INFO] Кнопка "Send message" найдена, кликаем по ней');
+      await sendMessageButton[0].click();
     } else {
-      throw new Error('Кнопка "Message" или "Options" не найдена.');
+      throw new Error('Кнопка "Message" или "Send message" не найдена после открытия меню.');
     }
+  } else {
+    throw new Error('Кнопка "Options" не найдена.');
+  }
 
-    // Ждем поле ввода сообщения
-    try {
-      await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
-    } catch {
-      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 8000 });
-    }
+  // Ждём появления поля ввода
+  await page.waitForSelector('textarea', { timeout: 5000 }).catch(() => {
+    throw new Error('Поле ввода сообщения не появилось.');
+  });
 
-    const inputSelector = await page.$('textarea') ? 'textarea' : 'div[contenteditable="true"]';
-    await page.focus(inputSelector);
+  await page.type('textarea', message);
+  await page.keyboard.press('Enter');
 
-    await page.evaluate(async (msg) => {
-      await navigator.clipboard.writeText(msg);
-    }, message);
+  console.log('[INFO] Сообщение отправлено!');
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  await browser.close();
+}
 
-    await page.click(inputSelector);
+app.post('/send', async (req, res) => {
+  const { username, message } = req.body;
+  if (!username || !message) {
+    return res.status(400).send('Username и message обязательны.');
+  }
 
-    await page.keyboard.down('Control');
-    await page.keyboard.press('V');
-    await page.keyboard.up('Control');
-
-    await randomDelay(200, 400);
-
-    await page.keyboard.press('Enter');
-
-    console.log('[INFO] Сообщение отправлено');
-
-    res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
+  try {
+    console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
+    await sendDM(username, message);
+    res.status(200).send('Сообщение успешно отправлено!');
   } catch (error) {
     console.error('[FATAL ERROR]', error);
-    res.status(500).json({ error: error.message });
-  } finally {
-    if (browser) await browser.close();
+    res.status(500).send(`Ошибка: ${error.message}`);
   }
 });
 
-const PORT = 10000;
-app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`[SERVER] Сервер запущен на порту ${PORT}`);
+});
