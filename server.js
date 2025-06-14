@@ -47,7 +47,6 @@ app.post('/send-dm', async (req, res) => {
     await randomDelay(500, 1000);
 
     const buttons = await page.$$('div[role="button"], button');
-
     let messageButton = null;
 
     for (const btn of buttons) {
@@ -107,18 +106,40 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
-    // Скипаем всплывающее окно "Turn on notifications"
+    // Скипаем всплывающее окно "Turn on notifications" — обновлённый вариант
     try {
       console.log('[INFO] Проверяем наличие окна "Turn on notifications"');
       await page.waitForSelector('div[role="dialog"]', { timeout: 5000 });
 
-      const notNowButton = await page.$x(
-        "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'not now')]"
-      );
+      const dialogButtons = await page.$$('div[role="dialog"] button, div[role="dialog"] div[role="button"]');
+      let notNowButton = null;
 
-      if (notNowButton.length > 0) {
-        console.log('[INFO] Обнаружена кнопка "Not Now", нажимаем');
-        await notNowButton[0].click();
+      for (const btn of dialogButtons) {
+        const [text, ariaLabel, title] = await Promise.all([
+          page.evaluate(el => el.textContent.trim(), btn).catch(() => ''),
+          page.evaluate(el => el.getAttribute('aria-label') || '', btn).catch(() => ''),
+          page.evaluate(el => el.getAttribute('title') || '', btn).catch(() => ''),
+        ]);
+
+        const textLower = text.toLowerCase();
+        const ariaLower = ariaLabel.toLowerCase();
+        const titleLower = title.toLowerCase();
+
+        console.log('[DEBUG] Кнопка в диалоге:', text, 'aria-label:', ariaLabel, 'title:', title);
+
+        if (
+          textLower === 'not now' ||
+          ariaLower === 'not now' ||
+          titleLower === 'not now'
+        ) {
+          notNowButton = btn;
+          break;
+        }
+      }
+
+      if (notNowButton) {
+        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
+        await notNowButton.click();
         await randomDelay(500, 1000);
       } else {
         console.log('[INFO] Кнопка "Not Now" не найдена');
