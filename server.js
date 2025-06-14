@@ -5,9 +5,8 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-// Быстрая случайная задержка, минимальная, чтобы не быть "роботом"
 const randomDelay = (min, max) =>
-  new Promise((resolve) => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
+  new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
@@ -27,11 +26,7 @@ app.post('/send-dm', async (req, res) => {
     });
 
     const page = await browser.newPage();
-
-    // Меняем user-agent, чтобы быть менее подозрительным
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
-    );
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
 
     const cookiesPath = './cookies.json';
     if (!fs.existsSync(cookiesPath)) {
@@ -45,73 +40,67 @@ app.post('/send-dm', async (req, res) => {
     const profileUrl = `https://www.instagram.com/${username}/`;
     await page.goto(profileUrl, { waitUntil: 'domcontentloaded' });
     console.log('[INFO] Страница пользователя загружена');
-
     await randomDelay(500, 1000);
 
-    // Универсальная функция для поиска и клика по кнопке "Send message" или "Message"
-    async function clickSendMessage() {
-      // Ищем кнопку "Options" (три точки) и кликаем, если есть
-      const optionsButtons = await page.$x(
-        "//button[contains(@aria-label, 'Options') or contains(@aria-label, 'More') or contains(text(), 'More')]"
-      );
+    let messageButton = null;
 
-      if (optionsButtons.length > 0) {
-        console.log('[INFO] Нажимаем на три точки (Options / More)');
-        await optionsButtons[0].click();
+    // 1. Пробуем найти кнопку Message напрямую
+    const buttons = await page.$$('div[role="button"], button');
+    for (const btn of buttons) {
+      const [text, ariaLabel, title] = await Promise.all([
+        page.evaluate(el => el.textContent.trim(), btn).catch(() => ''),
+        page.evaluate(el => el.getAttribute('aria-label') || '', btn).catch(() => ''),
+        page.evaluate(el => el.getAttribute('title') || '', btn).catch(() => ''),
+      ]);
+      const textLower = text.toLowerCase();
+      const ariaLower = ariaLabel.toLowerCase();
+      const titleLower = title.toLowerCase();
+
+      console.log('[DEBUG] Кнопка:', text, 'aria-label:', ariaLabel, 'title:', title);
+
+      if (['message'].includes(textLower) || ['message'].includes(ariaLower) || ['message'].includes(titleLower)) {
+        messageButton = btn;
+        break;
+      }
+
+      if (['more', 'options'].includes(textLower) || ['more', 'options'].includes(ariaLower) || ['more', 'options'].includes(titleLower)) {
+        console.log('[INFO] Пробуем нажать на три точки (Options / More)');
+        await btn.click();
         await page.waitForTimeout(1000);
 
-        // Ищем меню
         const menuSelector = 'div[role="dialog"], div[role="menu"]';
         await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
 
-        // Кнопки в меню
-        const menuButtons = await page.$$(menuSelector + ' button, ' + menuSelector + ' [role="menuitem"]');
+        const menuButtons = await page.$$(menuSelector + ' [role="button"], ' + menuSelector + ' button, ' + menuSelector + ' div[role="menuitem"]');
+        for (const item of menuButtons) {
+          const [itemText, itemAria, itemTitle] = await Promise.all([
+            page.evaluate(el => el.textContent.trim().toLowerCase(), item).catch(() => ''),
+            page.evaluate(el => el.getAttribute('aria-label') || '', item).catch(() => ''),
+            page.evaluate(el => el.getAttribute('title') || '', item).catch(() => ''),
+          ]);
+          console.log('[DEBUG] Пункт меню:', itemText, 'aria-label:', itemAria, 'title:', itemTitle);
 
-        for (const btn of menuButtons) {
-          const text = await page.evaluate((el) => el.textContent.trim().toLowerCase(), btn).catch(() => '');
-          const aria = await page.evaluate((el) => el.getAttribute('aria-label') || '', btn).catch(() => '');
-          const title = await page.evaluate((el) => el.getAttribute('title') || '', btn).catch(() => '');
-
-          if (text === 'send message' || aria.toLowerCase() === 'send message' || title.toLowerCase() === 'send message') {
-            console.log('[INFO] Кнопка "Send message" найдена в меню, кликаем');
-            await btn.click();
-            await page.waitForTimeout(1000);
-            return true;
+          if (itemText === 'send message' || itemAria.toLowerCase() === 'send message' || itemTitle.toLowerCase() === 'send message') {
+            messageButton = item;
+            break;
           }
         }
 
-        // Если не нашли — закрываем меню
-        console.log('[INFO] Кнопка "Send message" в меню не найдена, закрываем меню');
+        if (messageButton) break;
+
         await page.keyboard.press('Escape');
         await page.waitForTimeout(500);
-      } else {
-        console.log('[INFO] Кнопка "Options" (три точки) не найдена, пропускаем меню');
       }
-
-      // Ищем кнопку "Message" на странице напрямую
-      const buttons = await page.$$('button, div[role="button"]');
-      for (const btn of buttons) {
-        const text = await page.evaluate((el) => el.textContent.trim().toLowerCase(), btn).catch(() => '');
-        const aria = await page.evaluate((el) => el.getAttribute('aria-label') || '', btn).catch(() => '');
-        const title = await page.evaluate((el) => el.getAttribute('title') || '', btn).catch(() => '');
-
-        if (text === 'send message' || text === 'message' || aria.toLowerCase() === 'send message' || aria.toLowerCase() === 'message' || title.toLowerCase() === 'send message' || title.toLowerCase() === 'message') {
-          console.log('[INFO] Кнопка "Send message" или "Message" найдена на странице, кликаем');
-          await btn.click();
-          await page.waitForTimeout(1000);
-          return true;
-        }
-      }
-
-      return false;
     }
 
-    const clicked = await clickSendMessage();
-    if (!clicked) {
+    if (!messageButton) {
       throw new Error('Кнопка "Message" или "Send message" не найдена.');
     }
 
-    // Ждем появления поля ввода сообщения
+    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
+    await messageButton.click();
+
+    // 2. Ожидаем появление поля ввода
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
@@ -123,23 +112,18 @@ app.post('/send-dm', async (req, res) => {
 
     await page.focus(inputSelector);
 
-    // Вставляем сообщение через clipboard API + Ctrl+V
     await page.evaluate(async (msg) => {
       await navigator.clipboard.writeText(msg);
     }, message);
 
     await page.click(inputSelector);
-
     await page.keyboard.down('Control');
     await page.keyboard.press('V');
     await page.keyboard.up('Control');
-
     await randomDelay(200, 400);
-
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
-
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
     console.error('[FATAL ERROR]', error);
