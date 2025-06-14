@@ -107,28 +107,30 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
-    // Поиск "Not Now" или аналогов
-    const notNowVariants = ['not now', 'сейчас не нужно', 'later', 'skip'];
-    let notNowClicked = false;
-
+    // ✅ Обработка окна "Turn on notifications"
     try {
-      for (const variant of notNowVariants) {
-        const xpath = `//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), "${variant}")]`;
-        const buttons = await page.$x(xpath);
-        if (buttons.length > 0) {
-          await buttons[0].click();
-          console.log(`[INFO] Нажата кнопка "${variant}"`);
-          await randomDelay(500, 1000);
-          notNowClicked = true;
-          break;
+      console.log('[INFO] Проверяем наличие окна "Turn on notifications"...');
+
+      const lowerXpath = text => 
+        `//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '${text}')]`;
+
+      const notNowButtons = await page.$x(lowerXpath('not now'));
+      if (notNowButtons.length > 0) {
+        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
+        await notNowButtons[0].click();
+        await randomDelay(500, 800);
+      } else {
+        const turnOnButtons = await page.$x(lowerXpath('turn on'));
+        if (turnOnButtons.length > 0) {
+          console.log('[INFO] Кнопка "Turn On" найдена, нажимаем');
+          await turnOnButtons[0].click();
+          await randomDelay(500, 800);
+        } else {
+          console.log('[INFO] Кнопки "Not Now" и "Turn On" не найдены — продолжаем');
         }
       }
-
-      if (!notNowClicked) {
-        console.log('[INFO] Кнопка "Not Now" не найдена — продолжаем');
-      }
     } catch (e) {
-      console.log('[INFO] Ошибка при поиске кнопки "Not Now" — продолжаем');
+      console.log('[WARN] Ошибка при обработке окна "Turn on notifications" — продолжаем', e);
     }
 
     // Пишем сообщение
