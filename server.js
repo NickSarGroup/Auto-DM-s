@@ -107,27 +107,34 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
-    // Обработка окна "Turn on notifications" — через обход кнопок с текстом, без использования page.$x
+    // ✅ Обработка окна "Turn on notifications" — ищем кнопку "Not Now"
     try {
       console.log('[INFO] Проверяем наличие окна "Turn on notifications"...');
 
-      const buttons = await page.$$('button');
+      // Ищем кнопку "Not Now" через XPath по точному тексту
+      const notNowButtons = await page.$x("//button[text()='Not Now']");
 
-      let clicked = false;
-      for (const btn of buttons) {
-        const btnText = await page.evaluate(el => el.innerText.toLowerCase(), btn).catch(() => '');
-
-        if (btnText.includes('not now') || btnText.includes('turn on')) {
-          console.log(`[INFO] Кнопка с текстом "${btnText}" найдена, нажимаем`);
-          await btn.click();
-          await randomDelay(500, 800);
-          clicked = true;
-          break;
+      if (notNowButtons.length > 0) {
+        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
+        await notNowButtons[0].click();
+        await randomDelay(500, 800);
+      } else {
+        // Резервный поиск по классам и тексту
+        const buttonsWithClass = await page.$$('button._a9--._ap36._a9_1');
+        let clicked = false;
+        for (const btn of buttonsWithClass) {
+          const btnText = await page.evaluate(el => el.textContent.trim(), btn);
+          if (btnText === 'Not Now') {
+            console.log('[INFO] Кнопка "Not Now" найдена через классы, нажимаем');
+            await btn.click();
+            await randomDelay(500, 800);
+            clicked = true;
+            break;
+          }
         }
-      }
-
-      if (!clicked) {
-        console.log('[INFO] Кнопка с текстом "Not Now" или "Turn On" не найдена — продолжаем');
+        if (!clicked) {
+          console.log('[INFO] Кнопка "Not Now" не найдена — продолжаем');
+        }
       }
     } catch (e) {
       console.log('[WARN] Ошибка при обработке окна "Turn on notifications" — продолжаем', e);
