@@ -80,28 +80,17 @@ app.post('/send-dm', async (req, res) => {
         const menuSelector = 'div[role="dialog"], div[role="menu"]';
         await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
 
-        const menuButtons = await page.$$(
-          `${menuSelector} [role="button"], ${menuSelector} button, ${menuSelector} div[role="menuitem"]`
-        );
+        const menuButtons = await page.$$(`${menuSelector} *`);
 
         for (const item of menuButtons) {
-          const [itemText, itemAria, itemTitle] = await Promise.all([
-            page.evaluate(el => el.textContent.trim().toLowerCase(), item).catch(() => ''),
-            page.evaluate(el => el.getAttribute('aria-label') || '', item).catch(() => ''),
-            page.evaluate(el => el.getAttribute('title') || '', item).catch(() => ''),
-          ]);
+  const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
 
-          console.log('[DEBUG] Пункт меню:', itemText, 'aria-label:', itemAria, 'title:', itemTitle);
-
-          if (
-            itemText === 'send message' ||
-            itemAria.toLowerCase() === 'send message' ||
-            itemTitle.toLowerCase() === 'send message'
-          ) {
-            messageButton = item;
-            break;
-          }
-        }
+  if (itemText.includes('send message')) {
+    console.log('[INFO] Найдена кнопка "Send message" через резервный способ');
+    messageButton = item;
+    break;
+  }
+}
 
         if (messageButton) break;
 
