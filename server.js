@@ -114,7 +114,7 @@ app.post('/send-dm', async (req, res) => {
       const lowerXpath = text => 
         `//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '${text}')]`;
 
-      const notNowButtons = await page.$x(lowerXpath('not now'));
+      const notNowButtons = await (page.mainFrame() || page).$x(lowerXpath('not now'));
       if (notNowButtons.length > 0) {
         console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButtons[0].click();
