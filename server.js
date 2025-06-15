@@ -131,18 +131,32 @@ app.post('/send-dm', async (req, res) => {
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
-    // Корректный ввод сообщения с переносами через эмуляцию клавиатуры
-    const lines = message.split('\n');
+    // Вставляем сообщение с поддержкой переносов строк \n
+    await page.evaluate((selector, msg) => {
+      const el = document.querySelector(selector);
+      if (!el) return;
 
-    for (let i = 0; i < lines.length; i++) {
-      await page.keyboard.type(lines[i]);
-      if (i !== lines.length - 1) {
-        await page.keyboard.down('Shift');
-        await page.keyboard.press('Enter');
-        await page.keyboard.up('Shift');
+      el.focus();
+
+      if (el.tagName.toLowerCase() === 'textarea') {
+        el.value = msg;
+      } else {
+        el.innerHTML = '';
+        const lines = msg.split('\n');
+        lines.forEach((line, index) => {
+          const div = document.createElement('div');
+          div.textContent = line;
+          el.appendChild(div);
+          if (index !== lines.length - 1) {
+            const br = document.createElement('br');
+            el.appendChild(br);
+          }
+        });
       }
-      await randomDelay(100, 250);
-    }
+
+      const event = new Event('input', { bubbles: true });
+      el.dispatchEvent(event);
+    }, inputSelector, message);
 
     await randomDelay(500, 700);
     await page.keyboard.press('Enter');
