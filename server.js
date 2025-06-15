@@ -120,7 +120,7 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // Ожидаем поле для ввода
+    // Ожидаем поле для ввода сообщения
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
@@ -130,43 +130,19 @@ app.post('/send-dm', async (req, res) => {
       inputSelector = 'div[contenteditable="true"]';
     }
 
-    // Вставляем сообщение напрямую через evaluate
-    await page.evaluate((msg, selector) => {
-      const el = document.querySelector(selector);
-      if (!el) return;
+    // Новый способ: безопасный ввод через page.type
+    const inputElement = await page.$(inputSelector);
+    if (!inputElement) throw new Error('Поле ввода не найдено');
 
-      if (el.tagName.toLowerCase() === 'textarea') {
-        el.value = msg;
-      } else {
-        el.innerText = msg;
-      }
+    await inputElement.focus();
+    await page.evaluate(el => el.innerHTML = '', inputElement); // очищаем, если contenteditable
+    await page.type(inputSelector, message, { delay: 50 });
 
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      const keyboardEvent = new KeyboardEvent('keydown', {
-        bubbles: true,
-        cancelable: true,
-        key: 'a',
-        code: 'KeyA',
-      });
-      el.dispatchEvent(keyboardEvent);
+    await randomDelay(300, 500);
+    await inputElement.focus();
+    await page.keyboard.press('Enter');
 
-      el.focus();
-    }, message, inputSelector);
-
-    await randomDelay(300, 600);
-
-    // Нажимаем кнопку отправки
-    const sendButtonSelector = 'svg[aria-label="Send Message"], svg[aria-label="Send"]';
-    const sendButton = await page.$(sendButtonSelector);
-    if (sendButton) {
-      await sendButton.click();
-      console.log('[INFO] Сообщение отправлено нажатием кнопки Send');
-    } else {
-      // fallback: клавишей Enter
-      console.log('[WARN] Кнопка "Send" не найдена, пробуем нажать Enter');
-      await page.keyboard.press('Enter');
-    }
-
+    console.log('[INFO] Сообщение отправлено');
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
     console.error('[FATAL ERROR]', error);
