@@ -131,26 +131,13 @@ app.post('/send-dm', async (req, res) => {
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
-    // 🔥 Новая универсальная логика ввода сообщения с переносами строк
-    await page.evaluate(
-      ({ selector, msg }) => {
-        const el = document.querySelector(selector);
-        if (el) {
-          el.focus();
-          el.innerText = '';
-          const lines = msg.split('\n');
-          for (const line of lines) {
-            const textNode = document.createTextNode(line);
-            el.appendChild(textNode);
-            el.appendChild(document.createElement('br'));
-          }
-          const event = new Event('input', { bubbles: true });
-          el.dispatchEvent(event);
-        }
-      },
-      { selector: inputSelector, msg: message }
-    );
-
+    // 🔥 Надёжный ручной ввод по строкам через клавиатуру
+    for (const line of message.split('\n')) {
+      await page.keyboard.type(line);
+      await page.keyboard.down('Shift');
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Shift');
+    }
     await randomDelay(500, 700);
     await page.keyboard.press('Enter');
 
