@@ -119,7 +119,6 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // Ожидаем поле для ввода сообщения
     let inputSelector;
     let inputElement;
     try {
@@ -133,9 +132,19 @@ app.post('/send-dm', async (req, res) => {
     inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
-    // Вставляем сообщение через keyboard.type (надежно)
-    await page.keyboard.type(message, { delay: 20 });
-    await page.waitForTimeout(300);
+    const formattedMessage = message.replace(/\n/g, '\n');
+    const chunks = formattedMessage.match(/.{1,500}/gs) || [];
+
+    for (const chunk of chunks) {
+      const lines = chunk.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0) await page.keyboard.down('Shift'), await page.keyboard.press('Enter'), await page.keyboard.up('Shift');
+        await page.keyboard.type(lines[i], { delay: 10 });
+      }
+      await randomDelay(300, 500);
+    }
+
+    await randomDelay(500, 700);
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
