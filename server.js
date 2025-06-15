@@ -131,25 +131,24 @@ app.post('/send-dm', async (req, res) => {
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
-    // 🔥 Новая универсальная логика ввода сообщения с переносами строк
-    const finalMessage = message;
-    const lines = finalMessage.split('\n');
+    // 🔥 Обрабатываем текст: заменяем литералы \\n на реальные переносы строк
+    const finalMessage = message.replace(/\\n/g, '\n');
+    const escapedMessage = finalMessage.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
 
-    const escapedMessage = message.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
-await page.evaluate(
-  (selector, msg) => {
-    const el = document.querySelector(selector);
-    if (el) {
-      el.focus();
-      el.innerHTML = '';
-      const event = new InputEvent('input', { bubbles: true });
-      el.innerText = msg;
-      el.dispatchEvent(event);
-    }
-  },
-  inputSelector,
-  escapedMessage
-);
+    await page.evaluate(
+      (selector, msg) => {
+        const el = document.querySelector(selector);
+        if (el) {
+          el.focus();
+          el.innerHTML = '';
+          const event = new InputEvent('input', { bubbles: true });
+          el.innerText = msg;
+          el.dispatchEvent(event);
+        }
+      },
+      inputSelector,
+      escapedMessage
+    );
 
     await randomDelay(500, 700);
     await page.keyboard.press('Enter');
