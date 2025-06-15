@@ -107,19 +107,41 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
-    // Обработка окна "Turn on notifications" с ожиданием кнопки "Not Now"
-    try {
-      console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
+    // Устойчивый хендлинг окна "Turn on notifications"
+    await randomDelay(2000, 3000); // даём окну точно появиться
+    console.log('[INFO] Проверяем наличие окна "Turn on notifications"...');
 
-      const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
+    let notNowButton = null;
+
+    try {
+      // Пытаемся найти по точному классу
+      notNowButton = await page.$('button._a9--._ap36._a9_1');
 
       if (notNowButton) {
-        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
+        console.log('[INFO] Кнопка "Not Now" найдена по классу. Нажимаем...');
         await notNowButton.click();
         await randomDelay(500, 800);
+      } else {
+        // Если не нашли — ищем среди всех кнопок по тексту
+        console.log('[WARN] Кнопка "Not Now" не найдена по классу. Пробуем по тексту...');
+        const buttons = await page.$$('button');
+        for (const btn of buttons) {
+          const text = await page.evaluate(el => el.innerText?.trim(), btn);
+          if (text === 'Not Now') {
+            console.log('[INFO] Кнопка "Not Now" найдена по тексту. Нажимаем...');
+            await btn.click();
+            notNowButton = btn;
+            await randomDelay(500, 800);
+            break;
+          }
+        }
       }
-    } catch (e) {
-      console.log('[INFO] Окно "Turn on notifications" с кнопкой "Not Now" не появилось — продолжаем');
+
+      if (!notNowButton) {
+        console.log('[INFO] Кнопка "Not Now" не найдена — продолжаем без нажатия');
+      }
+    } catch (err) {
+      console.log('[ERROR] Ошибка при попытке нажать "Not Now":', err);
     }
 
     // Пишем сообщение
