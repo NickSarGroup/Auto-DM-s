@@ -47,6 +47,7 @@ app.post('/send-dm', async (req, res) => {
     await randomDelay(500, 1000);
 
     const buttons = await page.$$('div[role="button"], button');
+
     let messageButton = null;
 
     for (const btn of buttons) {
@@ -80,6 +81,7 @@ app.post('/send-dm', async (req, res) => {
         await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
 
         const menuButtons = await page.$$(`${menuSelector} *`);
+
         for (const item of menuButtons) {
           const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
 
@@ -97,23 +99,27 @@ app.post('/send-dm', async (req, res) => {
       }
     }
 
-    if (!messageButton) throw new Error('Кнопка "Message" или "Send message" не найдена.');
+    if (!messageButton) {
+      throw new Error('Кнопка "Message" или "Send message" не найдена.');
+    }
 
     console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
     await messageButton.click();
     await randomDelay(800, 1200);
 
-    // Обработка окна "Turn on notifications"
+    // Обработка окна "Turn on notifications" с ожиданием кнопки "Not Now"
     try {
       console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
+
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
+
       if (notNowButton) {
         console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButton.click();
         await randomDelay(500, 800);
       }
-    } catch {
-      console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
+    } catch (e) {
+      console.log('[INFO] Окно "Turn on notifications" с кнопкой "Not Now" не появилось — продолжаем');
     }
 
     // Вставляем сообщение и жмём Send
@@ -144,15 +150,34 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(400, 600);
 
-    const sendButton = await page.$('svg[aria-label="Send"]') || await page.$('button[type="submit"]');
-    if (sendButton) {
-      await sendButton.click();
-      console.log('[INFO] Кнопка "Send" найдена и нажата');
-    } else {
-      console.log('[ERROR] Кнопка "Send" не найдена. Возможно, сообщение не отправлено.');
+    // Новый поиск кнопки "Send" по role и классу
+    console.log('[INFO] Ищем кнопку "Send" по классу...');
+    const sendButtons = await page.$$(`div[role="button"]`);
+    let sendBtn = null;
+
+    for (const btn of sendButtons) {
+      const className = await page.evaluate(el => el.className, btn);
+      if (
+        className.includes('x1i10hfl') &&
+        className.includes('xjqpnuy') &&
+        className.includes('xdl72j9')
+      ) {
+        sendBtn = btn;
+        break;
+      }
     }
 
-    res.json({ status: 'ok', message: 'Сообщение попытались отправить (проверь лог)' });
+    if (sendBtn) {
+      await sendBtn.click();
+      console.log('[INFO] Кнопка "Send" найдена по классу и нажата');
+    } else {
+      console.log('[ERROR] Кнопка "Send" не найдена по классу');
+      throw new Error('Не удалось найти кнопку "Send" для отправки сообщения.');
+    }
+
+    console.log('[INFO] Сообщение отправлено');
+
+    res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
     console.error('[FATAL ERROR]', error);
     res.status(500).json({ error: error.message });
