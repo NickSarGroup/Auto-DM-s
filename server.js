@@ -135,15 +135,21 @@ app.post('/send-dm', async (req, res) => {
     const finalMessage = message;
     const lines = finalMessage.split('\n');
 
-    for (let i = 0; i < lines.length; i++) {
-      if (i > 0) {
-        await page.keyboard.down('Shift');
-        await page.keyboard.press('Enter');
-        await page.keyboard.up('Shift');
-      }
-      await page.keyboard.type(lines[i], { delay: 10 });
-      await randomDelay(100, 300);
+    const escapedMessage = message.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+await page.evaluate(
+  (selector, msg) => {
+    const el = document.querySelector(selector);
+    if (el) {
+      el.focus();
+      el.innerHTML = '';
+      const event = new InputEvent('input', { bubbles: true });
+      el.innerText = msg;
+      el.dispatchEvent(event);
     }
+  },
+  inputSelector,
+  escapedMessage
+);
 
     await randomDelay(500, 700);
     await page.keyboard.press('Enter');
