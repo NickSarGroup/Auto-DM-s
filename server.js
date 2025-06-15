@@ -8,6 +8,11 @@ app.use(express.json());
 const randomDelay = (min, max) =>
   new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
+// Функция sleep для задержек
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
 
@@ -122,22 +127,22 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" с кнопкой "Not Now" не появилось — продолжаем');
     }
 
-    // Ввод сообщения с имитацией набора текста
-    const inputSelector = 'div[contenteditable="true"]';
-    await page.waitForSelector(inputSelector, { visible: true, timeout: 8000 });
-    const input = await page.$(inputSelector);
+    // Ожидаем поле для ввода сообщения
+    let inputSelector;
+    try {
+      await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
+      inputSelector = 'textarea';
+    } catch {
+      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 8000 });
+      inputSelector = 'div[contenteditable="true"]';
+    }
 
-    await input.focus();
-    // Очистим поле
-    await page.evaluate(() => {
-      const el = document.querySelector('div[contenteditable="true"]');
-      if (el) el.innerHTML = '';
-    });
+    await page.focus(inputSelector);
 
-    // Вводим сообщение посимвольно с небольшой задержкой
+    // Вводим сообщение посимвольно с задержкой
     for (const char of message) {
       await page.keyboard.type(char);
-      await page.waitForTimeout(30);
+      await sleep(30);
     }
 
     await randomDelay(200, 400);
