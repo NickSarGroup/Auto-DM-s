@@ -47,7 +47,6 @@ app.post('/send-dm', async (req, res) => {
     await randomDelay(500, 1000);
 
     const buttons = await page.$$('div[role="button"], button');
-
     let messageButton = null;
 
     for (const btn of buttons) {
@@ -117,10 +116,10 @@ app.post('/send-dm', async (req, res) => {
         await randomDelay(500, 800);
       }
     } catch (e) {
-      console.log('[INFO] Окно "Turn on notifications" с кнопкой "Not Now" не появилось — продолжаем');
+      console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // Пишем сообщение
+    // Вставляем сообщение в поле
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
@@ -130,17 +129,25 @@ app.post('/send-dm', async (req, res) => {
       inputSelector = 'div[contenteditable="true"]';
     }
 
-    await page.click(inputSelector, { clickCount: 1 });
-    await randomDelay(300, 500);
-
-    await page.evaluate(selector => {
-      const el = document.querySelector(selector);
-      if (el) el.innerText = '';
-    }, inputSelector);
-
-    await page.type(inputSelector, message, { delay: 10 });
+    await page.focus(inputSelector);
     await randomDelay(300, 600);
+
+    await page.evaluate((selector, msg) => {
+      const el = document.querySelector(selector);
+      if (!el) return;
+
+      if (el.tagName.toLowerCase() === 'textarea') {
+        el.value = msg;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        el.innerText = msg;
+        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      }
+    }, inputSelector, message);
+
+    await randomDelay(400, 600);
     await page.keyboard.press('Enter');
+    await randomDelay(500, 800);
 
     console.log('[INFO] Сообщение отправлено');
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
