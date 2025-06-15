@@ -80,7 +80,6 @@ app.post('/send-dm', async (req, res) => {
         await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
 
         const menuButtons = await page.$$(`${menuSelector} *`);
-
         for (const item of menuButtons) {
           const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
 
@@ -98,9 +97,7 @@ app.post('/send-dm', async (req, res) => {
       }
     }
 
-    if (!messageButton) {
-      throw new Error('Кнопка "Message" или "Send message" не найдена.');
-    }
+    if (!messageButton) throw new Error('Кнопка "Message" или "Send message" не найдена.');
 
     console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
     await messageButton.click();
@@ -115,11 +112,11 @@ app.post('/send-dm', async (req, res) => {
         await notNowButton.click();
         await randomDelay(500, 800);
       }
-    } catch (e) {
+    } catch {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // Вставляем сообщение в поле
+    // Вставляем сообщение и жмём Send
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
@@ -146,11 +143,16 @@ app.post('/send-dm', async (req, res) => {
     }, inputSelector, message);
 
     await randomDelay(400, 600);
-    await page.keyboard.press('Enter');
-    await randomDelay(500, 800);
 
-    console.log('[INFO] Сообщение отправлено');
-    res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
+    const sendButton = await page.$('svg[aria-label="Send"]') || await page.$('button[type="submit"]');
+    if (sendButton) {
+      await sendButton.click();
+      console.log('[INFO] Кнопка "Send" найдена и нажата');
+    } else {
+      console.log('[ERROR] Кнопка "Send" не найдена. Возможно, сообщение не отправлено.');
+    }
+
+    res.json({ status: 'ok', message: 'Сообщение попытались отправить (проверь лог)' });
   } catch (error) {
     console.error('[FATAL ERROR]', error);
     res.status(500).json({ error: error.message });
