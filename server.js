@@ -131,23 +131,24 @@ app.post('/send-dm', async (req, res) => {
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
-    // 🔥 Обрабатываем текст: заменяем литералы \\n на реальные переносы строк
-    const finalMessage = message.replace(/\\n/g, '\n');
-    const escapedMessage = finalMessage.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
-
+    // 🔥 Новая универсальная логика ввода сообщения с переносами строк
     await page.evaluate(
-      (selector, msg) => {
+      ({ selector, msg }) => {
         const el = document.querySelector(selector);
         if (el) {
           el.focus();
-          el.innerHTML = '';
-          const event = new InputEvent('input', { bubbles: true });
-          el.innerText = msg;
+          el.innerText = '';
+          const lines = msg.split('\n');
+          for (const line of lines) {
+            const textNode = document.createTextNode(line);
+            el.appendChild(textNode);
+            el.appendChild(document.createElement('br'));
+          }
+          const event = new Event('input', { bubbles: true });
           el.dispatchEvent(event);
         }
       },
-      inputSelector,
-      escapedMessage
+      { selector: inputSelector, msg: message }
     );
 
     await randomDelay(500, 700);
