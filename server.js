@@ -138,7 +138,7 @@ app.post('/send-dm', async (req, res) => {
     await page.focus(inputSelector);
 
     // 💥 Вставляем текст через буфер обмена
-    await clipboardy.write(message);
+    await clipboardy.writeSync(message);
     await page.keyboard.down('Control');
     await page.keyboard.press('V');
     await page.keyboard.up('Control');
