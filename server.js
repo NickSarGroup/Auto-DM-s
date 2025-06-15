@@ -131,13 +131,23 @@ app.post('/send-dm', async (req, res) => {
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
-    // 🔥 Надёжный ручной ввод по строкам через клавиатуру
-    for (const line of message.split('\n')) {
-      await page.keyboard.type(line);
-      await page.keyboard.down('Shift');
-      await page.keyboard.press('Enter');
-      await page.keyboard.up('Shift');
-    }
+    // Правильная вставка сообщения с переносами \n
+    const escapedMessage = message.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+
+    await page.evaluate(
+      (selector, msg) => {
+        const el = document.querySelector(selector);
+        if (el) {
+          el.focus();
+          el.innerHTML = '';
+          el.innerText = msg;
+          el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        }
+      },
+      inputSelector,
+      escapedMessage
+    );
+
     await randomDelay(500, 700);
     await page.keyboard.press('Enter');
 
