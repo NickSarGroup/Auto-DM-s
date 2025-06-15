@@ -120,7 +120,7 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // Ожидаем поле для ввода сообщения
+    // Ожидаем поле для ввода
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
@@ -130,7 +130,7 @@ app.post('/send-dm', async (req, res) => {
       inputSelector = 'div[contenteditable="true"]';
     }
 
-    // Вставляем сообщение без имитации набора, через evaluate
+    // Вставляем сообщение напрямую через evaluate
     await page.evaluate((msg, selector) => {
       const el = document.querySelector(selector);
       if (!el) return;
@@ -153,12 +153,20 @@ app.post('/send-dm', async (req, res) => {
       el.focus();
     }, message, inputSelector);
 
-    await randomDelay(200, 300);
+    await randomDelay(300, 600);
 
-    // Отправляем сообщение нажатием Enter
-    await page.keyboard.press('Enter');
+    // Нажимаем кнопку отправки
+    const sendButtonSelector = 'svg[aria-label="Send Message"], svg[aria-label="Send"]';
+    const sendButton = await page.$(sendButtonSelector);
+    if (sendButton) {
+      await sendButton.click();
+      console.log('[INFO] Сообщение отправлено нажатием кнопки Send');
+    } else {
+      // fallback: клавишей Enter
+      console.log('[WARN] Кнопка "Send" не найдена, пробуем нажать Enter');
+      await page.keyboard.press('Enter');
+    }
 
-    console.log('[INFO] Сообщение отправлено');
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
     console.error('[FATAL ERROR]', error);
