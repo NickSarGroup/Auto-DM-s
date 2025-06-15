@@ -107,41 +107,17 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
-    // Устойчивый хендлинг окна "Turn on notifications"
-    await randomDelay(2000, 3000); // даём окну точно появиться
-    console.log('[INFO] Проверяем наличие окна "Turn on notifications"...');
-
-    let notNowButton = null;
-
+    // Обработка окна "Turn on notifications"
     try {
-      // Пытаемся найти по точному классу
-      notNowButton = await page.$('button._a9--._ap36._a9_1');
-
+      console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
+      const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
       if (notNowButton) {
-        console.log('[INFO] Кнопка "Not Now" найдена по классу. Нажимаем...');
+        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButton.click();
         await randomDelay(500, 800);
-      } else {
-        // Если не нашли — ищем среди всех кнопок по тексту
-        console.log('[WARN] Кнопка "Not Now" не найдена по классу. Пробуем по тексту...');
-        const buttons = await page.$$('button');
-        for (const btn of buttons) {
-          const text = await page.evaluate(el => el.innerText?.trim(), btn);
-          if (text === 'Not Now') {
-            console.log('[INFO] Кнопка "Not Now" найдена по тексту. Нажимаем...');
-            await btn.click();
-            notNowButton = btn;
-            await randomDelay(500, 800);
-            break;
-          }
-        }
       }
-
-      if (!notNowButton) {
-        console.log('[INFO] Кнопка "Not Now" не найдена — продолжаем без нажатия');
-      }
-    } catch (err) {
-      console.log('[ERROR] Ошибка при попытке нажать "Not Now":', err);
+    } catch (e) {
+      console.log('[INFO] Окно "Turn on notifications" с кнопкой "Not Now" не появилось — продолжаем');
     }
 
     // Пишем сообщение
@@ -154,22 +130,19 @@ app.post('/send-dm', async (req, res) => {
       inputSelector = 'div[contenteditable="true"]';
     }
 
-    await page.focus(inputSelector);
+    await page.click(inputSelector, { clickCount: 1 });
+    await randomDelay(300, 500);
 
-    await page.evaluate(async msg => {
-      await navigator.clipboard.writeText(msg);
-    }, message);
+    await page.evaluate(selector => {
+      const el = document.querySelector(selector);
+      if (el) el.innerText = '';
+    }, inputSelector);
 
-    await page.click(inputSelector);
-    await page.keyboard.down('Control');
-    await page.keyboard.press('V');
-    await page.keyboard.up('Control');
-
-    await randomDelay(200, 400);
+    await page.type(inputSelector, message, { delay: 10 });
+    await randomDelay(300, 600);
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
-
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
     console.error('[FATAL ERROR]', error);
