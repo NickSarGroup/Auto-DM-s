@@ -119,32 +119,33 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // Ожидаем поле ввода
     let inputSelector;
     try {
-      await page.waitForSelector('textarea', { visible: true, timeout: 3000 });
+      await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
       inputSelector = 'textarea';
     } catch {
-      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 3000 });
+      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 8000 });
       inputSelector = 'div[contenteditable="true"]';
     }
 
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
-    await randomDelay(300, 500);
 
-    // Отправляем сообщение построчно с переносами Shift+Enter
-    const lines = message.split('\n');
-    for (const line of lines) {
-      await page.keyboard.type(line, { delay: 15 });
-      await page.keyboard.down('Shift');
-      await page.keyboard.press('Enter');
-      await page.keyboard.up('Shift');
-      await randomDelay(100, 200);
+    // 🔥 Новая универсальная логика ввода сообщения с переносами строк
+    const finalMessage = message;
+    const lines = finalMessage.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      if (i > 0) {
+        await page.keyboard.down('Shift');
+        await page.keyboard.press('Enter');
+        await page.keyboard.up('Shift');
+      }
+      await page.keyboard.type(lines[i], { delay: 10 });
+      await randomDelay(100, 300);
     }
 
-    // Финальный Enter для отправки
-    await randomDelay(300, 600);
+    await randomDelay(500, 700);
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
