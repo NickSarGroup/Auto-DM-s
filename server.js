@@ -122,58 +122,28 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" с кнопкой "Not Now" не появилось — продолжаем');
     }
 
-    // Вставляем сообщение и жмём Send
-    let inputSelector;
-    try {
-      await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
-      inputSelector = 'textarea';
-    } catch {
-      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 8000 });
-      inputSelector = 'div[contenteditable="true"]';
+    // Ввод сообщения с имитацией набора текста
+    const inputSelector = 'div[contenteditable="true"]';
+    await page.waitForSelector(inputSelector, { visible: true, timeout: 8000 });
+    const input = await page.$(inputSelector);
+
+    await input.focus();
+    // Очистим поле
+    await page.evaluate(() => {
+      const el = document.querySelector('div[contenteditable="true"]');
+      if (el) el.innerHTML = '';
+    });
+
+    // Вводим сообщение посимвольно с небольшой задержкой
+    for (const char of message) {
+      await page.keyboard.type(char);
+      await page.waitForTimeout(30);
     }
 
-    await page.focus(inputSelector);
-    await randomDelay(300, 600);
+    await randomDelay(200, 400);
 
-    await page.evaluate((selector, msg) => {
-      const el = document.querySelector(selector);
-      if (!el) return;
-
-      if (el.tagName.toLowerCase() === 'textarea') {
-        el.value = msg;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      } else {
-        el.innerText = msg;
-        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      }
-    }, inputSelector, message);
-
-    await randomDelay(400, 600);
-
-    // Новый поиск кнопки "Send" по role и классу
-    console.log('[INFO] Ищем кнопку "Send" по классу...');
-    const sendButtons = await page.$$(`div[role="button"]`);
-    let sendBtn = null;
-
-    for (const btn of sendButtons) {
-      const className = await page.evaluate(el => el.className, btn);
-      if (
-        className.includes('x1i10hfl') &&
-        className.includes('xjqpnuy') &&
-        className.includes('xdl72j9')
-      ) {
-        sendBtn = btn;
-        break;
-      }
-    }
-
-    if (sendBtn) {
-      await sendBtn.click();
-      console.log('[INFO] Кнопка "Send" найдена по классу и нажата');
-    } else {
-      console.log('[ERROR] Кнопка "Send" не найдена по классу');
-      throw new Error('Не удалось найти кнопку "Send" для отправки сообщения.');
-    }
+    // Нажимаем Enter для отправки
+    await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
 
