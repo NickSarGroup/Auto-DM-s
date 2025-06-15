@@ -107,7 +107,6 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
-    // Окно "Turn on notifications"
     try {
       console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
@@ -122,6 +121,7 @@ app.post('/send-dm', async (req, res) => {
 
     // Ожидаем поле для ввода сообщения
     let inputSelector;
+    let inputElement;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
       inputSelector = 'textarea';
@@ -130,15 +130,23 @@ app.post('/send-dm', async (req, res) => {
       inputSelector = 'div[contenteditable="true"]';
     }
 
-    // Новый способ: безопасный ввод через page.type
-    const inputElement = await page.$(inputSelector);
-    if (!inputElement) throw new Error('Поле ввода не найдено');
+    inputElement = await page.$(inputSelector);
 
-    await inputElement.focus();
-    await page.evaluate(el => el.innerHTML = '', inputElement); // очищаем, если contenteditable
-    await page.type(inputSelector, message, { delay: 50 });
+    // Вставляем сообщение мгновенно и проверяем вставку
+    await page.evaluate((el, msg) => {
+      el.innerText = msg;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.focus();
+    }, inputElement, message);
 
-    await randomDelay(300, 500);
+    await page.waitForFunction(
+      (el, msg) => el.innerText.trim() === msg.trim(),
+      {},
+      inputElement,
+      message
+    );
+
+    await page.waitForTimeout(300);
     await inputElement.focus();
     await page.keyboard.press('Enter');
 
