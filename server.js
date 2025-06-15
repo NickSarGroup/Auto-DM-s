@@ -131,23 +131,11 @@ app.post('/send-dm', async (req, res) => {
     }
 
     inputElement = await page.$(inputSelector);
-
-    // Вставляем сообщение мгновенно и проверяем вставку
-    await page.evaluate((el, msg) => {
-      el.innerText = msg;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.focus();
-    }, inputElement, message);
-
-    await page.waitForFunction(
-      (el, msg) => el.innerText.trim() === msg.trim(),
-      {},
-      inputElement,
-      message
-    );
-
-    await page.waitForTimeout(300);
     await inputElement.focus();
+
+    // Вставляем сообщение через keyboard.type (надежно)
+    await page.keyboard.type(message, { delay: 20 });
+    await page.waitForTimeout(300);
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
