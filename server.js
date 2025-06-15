@@ -131,22 +131,18 @@ app.post('/send-dm', async (req, res) => {
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
-    // Правильная вставка сообщения с переносами \n
-    const escapedMessage = message.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+    // Корректный ввод сообщения с переносами через эмуляцию клавиатуры
+    const lines = message.split('\n');
 
-    await page.evaluate(
-      (selector, msg) => {
-        const el = document.querySelector(selector);
-        if (el) {
-          el.focus();
-          el.innerHTML = '';
-          el.innerText = msg;
-          el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        }
-      },
-      inputSelector,
-      escapedMessage
-    );
+    for (let i = 0; i < lines.length; i++) {
+      await page.keyboard.type(lines[i]);
+      if (i !== lines.length - 1) {
+        await page.keyboard.down('Shift');
+        await page.keyboard.press('Enter');
+        await page.keyboard.up('Shift');
+      }
+      await randomDelay(100, 250);
+    }
 
     await randomDelay(500, 700);
     await page.keyboard.press('Enter');
