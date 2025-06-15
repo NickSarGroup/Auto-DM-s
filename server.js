@@ -131,9 +131,8 @@ app.post('/send-dm', async (req, res) => {
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
-    // 🔥 Новая универсальная логика ввода сообщения с переносами строк
-    const finalMessage = message;
-    const lines = finalMessage.split('\n');
+    // Корректная обработка переноса строк \n в сообщении
+    const lines = message.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       if (i > 0) {
