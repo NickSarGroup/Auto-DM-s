@@ -5,13 +5,13 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-const randomDelay = (min, max) =>
-  new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
-
-// Функция sleep для задержек
+// Функция sleep для пауз (аналог page.waitForTimeout)
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+const randomDelay = (min, max) =>
+  new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
@@ -121,13 +121,13 @@ app.post('/send-dm', async (req, res) => {
       if (notNowButton) {
         console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButton.click();
-        await randomDelay(500, 800);
+        await sleep(600);
       }
     } catch (e) {
       console.log('[INFO] Окно "Turn on notifications" с кнопкой "Not Now" не появилось — продолжаем');
     }
 
-    // Ожидаем поле для ввода сообщения
+    // Пишем сообщение
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
@@ -139,15 +139,17 @@ app.post('/send-dm', async (req, res) => {
 
     await page.focus(inputSelector);
 
-    // Вводим сообщение посимвольно с задержкой
-    for (const char of message) {
-      await page.keyboard.type(char);
-      await sleep(30);
-    }
+    // Вставка через clipboard (надёжнее)
+    await page.evaluate(async msg => {
+      await navigator.clipboard.writeText(msg);
+    }, message);
 
-    await randomDelay(200, 400);
+    await page.click(inputSelector);
+    await page.keyboard.down('Control');
+    await page.keyboard.press('V');
+    await page.keyboard.up('Control');
 
-    // Нажимаем Enter для отправки
+    await sleep(400);
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
