@@ -8,10 +8,6 @@ app.use(express.json());
 const randomDelay = (min, max) =>
   new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
 
@@ -134,23 +130,32 @@ app.post('/send-dm', async (req, res) => {
       inputSelector = 'div[contenteditable="true"]';
     }
 
-    await page.focus(inputSelector);
-
-    // 💥 Вставляем текст напрямую в поле
+    // Вставляем сообщение без имитации набора, через evaluate
     await page.evaluate((msg, selector) => {
       const el = document.querySelector(selector);
-      if (el) {
-        el.focus();
+      if (!el) return;
+
+      if (el.tagName.toLowerCase() === 'textarea') {
         el.value = msg;
-        el.innerHTML = msg; // для contenteditable
-        const event = new Event('input', { bubbles: true });
-        el.dispatchEvent(event);
+      } else {
+        el.innerText = msg;
       }
+
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      const keyboardEvent = new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: 'a',
+        code: 'KeyA',
+      });
+      el.dispatchEvent(keyboardEvent);
+
+      el.focus();
     }, message, inputSelector);
 
-    await randomDelay(200, 400);
+    await randomDelay(200, 300);
 
-    // Нажимаем Enter
+    // Отправляем сообщение нажатием Enter
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
