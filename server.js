@@ -1,7 +1,6 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
-const clipboardy = require('clipboardy'); // добавлено
 
 const app = express();
 app.use(express.json());
@@ -137,11 +136,17 @@ app.post('/send-dm', async (req, res) => {
 
     await page.focus(inputSelector);
 
-    // 💥 Вставляем текст через буфер обмена
-    await clipboardy.writeSync(message);
-    await page.keyboard.down('Control');
-    await page.keyboard.press('V');
-    await page.keyboard.up('Control');
+    // 💥 Вставляем текст напрямую в поле
+    await page.evaluate((msg, selector) => {
+      const el = document.querySelector(selector);
+      if (el) {
+        el.focus();
+        el.value = msg;
+        el.innerHTML = msg; // для contenteditable
+        const event = new Event('input', { bubbles: true });
+        el.dispatchEvent(event);
+      }
+    }, message, inputSelector);
 
     await randomDelay(200, 400);
 
