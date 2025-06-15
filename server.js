@@ -1,6 +1,7 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
+const clipboardy = require('clipboardy'); // добавлено
 
 const app = express();
 app.use(express.json());
@@ -8,7 +9,6 @@ app.use(express.json());
 const randomDelay = (min, max) =>
   new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
-// Функция sleep для задержек
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -112,19 +112,17 @@ app.post('/send-dm', async (req, res) => {
     await messageButton.click();
     await randomDelay(800, 1200);
 
-    // Обработка окна "Turn on notifications" с ожиданием кнопки "Not Now"
+    // Окно "Turn on notifications"
     try {
       console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
-
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
-
       if (notNowButton) {
         console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButton.click();
         await randomDelay(500, 800);
       }
     } catch (e) {
-      console.log('[INFO] Окно "Turn on notifications" с кнопкой "Not Now" не появилось — продолжаем');
+      console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
     // Ожидаем поле для ввода сообщения
@@ -139,19 +137,18 @@ app.post('/send-dm', async (req, res) => {
 
     await page.focus(inputSelector);
 
-    // Вводим сообщение посимвольно с задержкой
-    for (const char of message) {
-      await page.keyboard.type(char);
-      await sleep(30);
-    }
+    // 💥 Вставляем текст через буфер обмена
+    await clipboardy.write(message);
+    await page.keyboard.down('Control');
+    await page.keyboard.press('V');
+    await page.keyboard.up('Control');
 
     await randomDelay(200, 400);
 
-    // Нажимаем Enter для отправки
+    // Нажимаем Enter
     await page.keyboard.press('Enter');
 
     console.log('[INFO] Сообщение отправлено');
-
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
     console.error('[FATAL ERROR]', error);
