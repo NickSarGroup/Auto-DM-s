@@ -61,6 +61,8 @@ app.post('/send-dm', async (req, res) => {
       const ariaLower = ariaLabel.toLowerCase();
       const titleLower = title.toLowerCase();
 
+      console.log('[DEBUG] Кнопка:', text, 'aria-label:', ariaLabel, 'title:', title);
+
       if (textLower === 'message' || ariaLower === 'message' || titleLower === 'message') {
         messageButton = btn;
         break;
@@ -71,6 +73,7 @@ app.post('/send-dm', async (req, res) => {
         ['options', 'more'].includes(ariaLower) ||
         ['options', 'more'].includes(titleLower)
       ) {
+        console.log('[INFO] Пробуем нажать на три точки (Options / More)');
         await btn.click();
         await randomDelay(800, 1200);
 
@@ -83,6 +86,7 @@ app.post('/send-dm', async (req, res) => {
           const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
 
           if (itemText.includes('send message')) {
+            console.log('[INFO] Найдена кнопка "Send message" через резервный способ');
             messageButton = item;
             break;
           }
@@ -99,16 +103,21 @@ app.post('/send-dm', async (req, res) => {
       throw new Error('Кнопка "Message" или "Send message" не найдена.');
     }
 
+    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
     await messageButton.click();
     await randomDelay(800, 1200);
 
     try {
+      console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
       if (notNowButton) {
+        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButton.click();
         await randomDelay(500, 800);
       }
-    } catch {}
+    } catch (e) {
+      console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
+    }
 
     let inputSelector;
     try {
@@ -119,40 +128,36 @@ app.post('/send-dm', async (req, res) => {
       inputSelector = 'div[contenteditable="true"]';
     }
 
-    await page.focus(inputSelector);
+    const inputElement = await page.$(inputSelector);
+    await inputElement.focus();
 
-    await page.evaluate((selector, msg) => {
-      const el = document.querySelector(selector);
-      if (!el) return;
+    // 🔥 Новая универсальная логика ввода сообщения с переносами строк
+    const finalMessage = message;
+    const lines = finalMessage.split('\n');
 
+    const escapedMessage = message.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+await page.evaluate(
+  (selector, msg) => {
+    const el = document.querySelector(selector);
+    if (el) {
       el.focus();
-
-      if (el.tagName.toLowerCase() === 'textarea') {
-        el.value = msg;
-      } else {
-        el.innerHTML = '';
-        const lines = msg.split('\n');
-        lines.forEach((line, index) => {
-          const div = document.createElement('div');
-          div.textContent = line;
-          el.appendChild(div);
-          if (index !== lines.length - 1) {
-            const br = document.createElement('br');
-            el.appendChild(br);
-          }
-        });
-      }
-
-      const event = new Event('input', { bubbles: true });
+      el.innerHTML = '';
+      const event = new InputEvent('input', { bubbles: true });
+      el.innerText = msg;
       el.dispatchEvent(event);
-    }, inputSelector, message);
+    }
+  },
+  inputSelector,
+  escapedMessage
+);
 
     await randomDelay(500, 700);
     await page.keyboard.press('Enter');
 
+    console.log('[INFO] Сообщение отправлено');
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
   } catch (error) {
-    console.error('[ERROR]', error);
+    console.error('[FATAL ERROR]', error);
     res.status(500).json({ error: error.message });
   } finally {
     if (browser) await browser.close();
