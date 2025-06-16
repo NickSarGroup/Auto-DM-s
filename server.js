@@ -8,7 +8,7 @@ app.use(express.json());
 const randomDelay = (min, max) =>
   new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
-const privateAccounts = []; // сюда будем добавлять приватные аккаунты
+const skippedAccounts = [];
 
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
@@ -103,7 +103,7 @@ app.post('/send-dm', async (req, res) => {
 
     if (!messageButton) {
       console.log(`[SKIP] Приватный аккаунт — нет кнопки "Message": ${username}`);
-      privateAccounts.push(username);
+      skippedAccounts.push({ username, reason: 'no_message_button' });
       return res.json({ status: 'skipped', reason: 'Приватный аккаунт, сообщение невозможно отправить' });
     }
 
@@ -123,20 +123,34 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
+    // Проверка: "Not everyone can message this account"
+    const dmPageContent = await page.content();
+    if (dmPageContent.includes('Not everyone can message this account')) {
+      console.log(`[SKIP] DMs закрыты для всех у ${username}`);
+      skippedAccounts.push({ username, reason: 'restricted_dms' });
+      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
+    }
+
+    // Поиск поля для ввода
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
       inputSelector = 'textarea';
     } catch {
-      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 8000 });
-      inputSelector = 'div[contenteditable="true"]';
+      try {
+        await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 8000 });
+        inputSelector = 'div[contenteditable="true"]';
+      } catch {
+        console.log(`[SKIP] Поле ввода не найдено: ${username}`);
+        skippedAccounts.push({ username, reason: 'no_input_field' });
+        return res.json({ status: 'skipped', reason: 'No input field — DMs likely restricted' });
+      }
     }
 
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
     const lines = message.split('\n');
-
     for (let i = 0; i < lines.length; i++) {
       if (i > 0) {
         await page.keyboard.down('Shift');
@@ -152,17 +166,18 @@ app.post('/send-dm', async (req, res) => {
 
     console.log('[INFO] Сообщение отправлено');
     res.json({ status: 'ok', message: 'Сообщение успешно отправлено' });
+
   } catch (error) {
     console.error('[FATAL ERROR]', error);
     res.status(500).json({ error: error.message });
   } finally {
     if (browser) await browser.close();
 
-    if (privateAccounts.length > 0) {
+    if (skippedAccounts.length > 0) {
       const logsDir = './logs';
       if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir);
-      fs.writeFileSync(`${logsDir}/private_accounts.json`, JSON.stringify(privateAccounts, null, 2));
-      console.log(`[INFO] Приватные аккаунты записаны в logs/private_accounts.json`);
+      fs.writeFileSync(`${logsDir}/skipped_accounts.json`, JSON.stringify(skippedAccounts, null, 2));
+      console.log(`[INFO] Список пропущенных аккаунтов записан в logs/skipped_accounts.json`);
     }
   }
 });
