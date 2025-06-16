@@ -123,10 +123,11 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // --- Проверка DOM на ошибку DMs ---
+    // --- Проверка наличия ограничения на новые сообщения ---
     const dmBlocked = await page.evaluate(() => {
       const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
-      return Array.from(document.querySelectorAll('div, span')).some(el => el.innerText?.trim() === targetText);
+      return Array.from(document.querySelectorAll('div, span'))
+        .some(el => el.innerText?.trim() === targetText);
     });
 
     if (dmBlocked) {
