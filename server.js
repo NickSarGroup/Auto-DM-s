@@ -9,6 +9,15 @@ const randomDelay = (min, max) =>
   new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
 const skippedAccounts = [];
+const banWords = [
+  "this account can't receive your message",
+  "they don't allow new message requests from everyone",
+  "not everyone can message this account",
+  "can't message this account",
+  "doesn't allow messages",
+  "can't receive your message",
+  "can't send messages to this account",
+];
 
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
@@ -63,6 +72,8 @@ app.post('/send-dm', async (req, res) => {
       const ariaLower = ariaLabel.toLowerCase();
       const titleLower = title.toLowerCase();
 
+      console.log('[DEBUG] Кнопка:', text, 'aria-label:', ariaLabel, 'title:', title);
+
       if (textLower === 'message' || ariaLower === 'message' || titleLower === 'message') {
         messageButton = btn;
         break;
@@ -73,6 +84,7 @@ app.post('/send-dm', async (req, res) => {
         ['options', 'more'].includes(ariaLower) ||
         ['options', 'more'].includes(titleLower)
       ) {
+        console.log('[INFO] Пробуем нажать на три точки (Options / More)');
         await btn.click();
         await randomDelay(800, 1200);
 
@@ -83,13 +95,16 @@ app.post('/send-dm', async (req, res) => {
 
         for (const item of menuButtons) {
           const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
+
           if (itemText.includes('send message')) {
+            console.log('[INFO] Найдена кнопка "Send message" через резервный способ');
             messageButton = item;
             break;
           }
         }
 
         if (messageButton) break;
+
         await page.keyboard.press('Escape');
         await randomDelay(300, 500);
       }
@@ -98,15 +113,18 @@ app.post('/send-dm', async (req, res) => {
     if (!messageButton) {
       console.log(`[SKIP] Приватный аккаунт — нет кнопки "Message": ${username}`);
       skippedAccounts.push({ username, reason: 'no_message_button' });
-      return res.json({ status: 'skipped', reason: 'Приватный аккаунт, нет кнопки Message' });
+      return res.json({ status: 'skipped', reason: 'Приватный аккаунт, сообщение невозможно отправить' });
     }
 
+    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
     await messageButton.click();
     await randomDelay(800, 1200);
 
     try {
+      console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
       if (notNowButton) {
+        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButton.click();
         await randomDelay(500, 800);
       }
@@ -114,24 +132,19 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // --- Блокировка по банвордам ДО ввода сообщения ---
-    const bannedPhrases = [
-      'you can’t message this account',
-      'this account can’t receive your message',
-      'can’t send messages to this account',
-      'messages can’t be sent to this account',
-    ];
+    // --- Проверка на банворды до ввода сообщения ---
+    const banMatch = await page.evaluate((banWords) => {
+      const textContent = Array.from(document.querySelectorAll('div, span, p')).map(el => el.innerText?.toLowerCase() || '').join(' ');
+      return banWords.find(word => textContent.includes(word));
+    }, banWords);
 
-    const pageText = await page.evaluate(() => document.body.innerText.toLowerCase());
-    const containsBanned = bannedPhrases.some(bw => pageText.includes(bw));
-
-    if (containsBanned) {
-      console.log(`[SKIP] Блокировка на стороне пользователя (банворд): ${username}`);
-      skippedAccounts.push({ username, reason: 'dm_blocked_banword' });
-      return res.json({ status: 'skipped', reason: 'Профиль ограничил входящие DMs (по тексту)' });
+    if (banMatch) {
+      console.log(`[SKIP] У пользователя ограничение на DM (обнаружен банворд: "${banMatch}")`);
+      skippedAccounts.push({ username, reason: `banword_detected: ${banMatch}` });
+      return res.json({ status: 'skipped', reason: `DM ограничены, найден банворд: ${banMatch}` });
     }
 
-    // --- Проверка поля ввода ---
+    // --- Поле ввода сообщения ---
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
@@ -143,7 +156,7 @@ app.post('/send-dm', async (req, res) => {
       } catch {
         console.log(`[SKIP] Поле ввода не найдено: ${username}`);
         skippedAccounts.push({ username, reason: 'no_input_field' });
-        return res.json({ status: 'skipped', reason: 'Нет поля ввода — возможно, пользователь ограничил DMs' });
+        return res.json({ status: 'skipped', reason: 'No input field — DMs likely restricted' });
       }
     }
 
