@@ -2,51 +2,22 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
-const { Configuration, OpenAIApi } = require('openai');
-
 const app = express();
 app.use(express.json());
-
-const configuration = new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,  // API ключ из переменных окружения
-});
-const openai = new OpenAIApi(configuration);
 
 const randomDelay = (min, max) =>
   new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
 const skippedAccounts = [];
 
-// Функция генерации персонализированного оффера через GPT
-async function generatePersonalizedOffer(username, baseMessage) {
-  try {
-    const prompt = `Напиши персонализированное приветственное сообщение для пользователя Instagram с ником "${username}". Базовое сообщение: "${baseMessage}". Сделай его дружелюбным, но профессиональным.`;
-    const response = await openai.createChatCompletion({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 150,
-      temperature: 0.7,
-    });
-    const generated = response.data.choices[0].message.content.trim();
-    console.log('[GPT] Сгенерированное сообщение:', generated);
-    return generated;
-  } catch (error) {
-    console.error('[GPT ERROR]', error);
-    return baseMessage;  // fallback — если ошибка, вернем исходное сообщение
-  }
-}
-
 app.post('/send-dm', async (req, res) => {
-  let { username, message } = req.body;
+  const { username, message } = req.body;
 
   console.log(`[INFO] Получен запрос: username=${username}, message=${message}`);
 
   if (!username || !message) {
     return res.status(400).json({ error: 'username и message обязательны' });
   }
-
-  // Генерируем персонализированный оффер через GPT
-  message = await generatePersonalizedOffer(username, message);
 
   let browser;
   try {
@@ -152,11 +123,18 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    const dmPageContent = await page.content();
-    if (dmPageContent.includes('Not everyone can message this account')) {
-      console.log(`[SKIP] DMs закрыты для всех у ${username}`);
+    // --- Новая проверка ограничения DM ---
+    try {
+      await page.waitForFunction(() => {
+        return [...document.querySelectorAll('div, span')]
+          .some(el => el.innerText === "This account can't receive your message because they don't allow new message requests from everyone.");
+      }, { timeout: 3000 });
+
+      console.log(`[SKIP] У пользователя DM закрыты (текст ошибки найден)`);
       skippedAccounts.push({ username, reason: 'restricted_dms' });
       return res.json({ status: 'skipped', reason: 'User restricted DMs' });
+    } catch {
+      // Если не нашли — продолжаем
     }
 
     let inputSelector;
