@@ -123,20 +123,19 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // --- Новая проверка ограничения DM ---
-    try {
-      await page.waitForFunction(() => {
-        return [...document.querySelectorAll('div, span')]
-          .some(el => el.innerText === "This account can't receive your message because they don't allow new message requests from everyone.");
-      }, { timeout: 3000 });
+    // --- Проверка DOM на ошибку DMs ---
+    const dmBlocked = await page.evaluate(() => {
+      const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
+      return Array.from(document.querySelectorAll('div, span')).some(el => el.innerText?.trim() === targetText);
+    });
 
-      console.log(`[SKIP] У пользователя DM закрыты (текст ошибки найден)`);
+    if (dmBlocked) {
+      console.log(`[SKIP] У пользователя DM закрыты (текст ошибки найден в DOM)`);
       skippedAccounts.push({ username, reason: 'restricted_dms' });
       return res.json({ status: 'skipped', reason: 'User restricted DMs' });
-    } catch {
-      // Если не нашли — продолжаем
     }
 
+    // --- Поле ввода сообщения ---
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
