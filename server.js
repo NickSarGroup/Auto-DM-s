@@ -123,7 +123,6 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // Проверка: "Not everyone can message this account"
     const dmPageContent = await page.content();
     if (dmPageContent.includes('Not everyone can message this account')) {
       console.log(`[SKIP] DMs закрыты для всех у ${username}`);
@@ -131,7 +130,6 @@ app.post('/send-dm', async (req, res) => {
       return res.json({ status: 'skipped', reason: 'User restricted DMs' });
     }
 
-    // Поиск поля для ввода
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
@@ -177,7 +175,7 @@ app.post('/send-dm', async (req, res) => {
       const logsDir = './logs';
       if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir);
       fs.writeFileSync(`${logsDir}/skipped_accounts.json`, JSON.stringify(skippedAccounts, null, 2));
-      console.log(`[INFO] Список пропущенных аккаунтов записан в logs/skipped_accounts.json`);
+      console.log('[INFO] Список пропущенных аккаунтов записан в logs/skipped_accounts.json');
     }
   }
 });
