@@ -8,6 +8,8 @@ app.use(express.json());
 const randomDelay = (min, max) =>
   new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
+const privateAccounts = []; // сюда будем добавлять приватные аккаунты
+
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
 
@@ -100,7 +102,9 @@ app.post('/send-dm', async (req, res) => {
     }
 
     if (!messageButton) {
-      throw new Error('Кнопка "Message" или "Send message" не найдена.');
+      console.log(`[SKIP] Приватный аккаунт — нет кнопки "Message": ${username}`);
+      privateAccounts.push(username);
+      return res.json({ status: 'skipped', reason: 'Приватный аккаунт, сообщение невозможно отправить' });
     }
 
     console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
@@ -131,7 +135,6 @@ app.post('/send-dm', async (req, res) => {
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
-    // Корректная обработка переноса строк \n в сообщении
     const lines = message.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
@@ -154,6 +157,13 @@ app.post('/send-dm', async (req, res) => {
     res.status(500).json({ error: error.message });
   } finally {
     if (browser) await browser.close();
+
+    if (privateAccounts.length > 0) {
+      const logsDir = './logs';
+      if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir);
+      fs.writeFileSync(`${logsDir}/private_accounts.json`, JSON.stringify(privateAccounts, null, 2));
+      console.log(`[INFO] Приватные аккаунты записаны в logs/private_accounts.json`);
+    }
   }
 });
 
