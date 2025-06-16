@@ -125,22 +125,20 @@ app.post('/send-dm', async (req, res) => {
 
     // --- Проверка на банворды после открытия DM ---
     const dmBlockDetected = await page.evaluate(() => {
-      const banwords = [
-        "this account can't receive your message",
-        "can't receive your message because they don't allow new message requests",
-        "this account isn't available"
+      const exactBanPhrases = [
+        "this account can't receive your message because they don't allow new message requests from everyone."
       ];
 
       return Array.from(document.querySelectorAll('div, span')).some(el => {
         const text = el.innerText?.trim().toLowerCase();
-        return banwords.some(word => text && text.includes(word));
+        return exactBanPhrases.some(phrase => text === phrase);
       });
     });
 
     if (dmBlockDetected) {
-      console.log(`[SKIP] У пользователя ограничение на DM (обнаружен банворд)`);
-      skippedAccounts.push({ username, reason: 'restricted_dms_detected_in_dm' });
-      return res.json({ status: 'skipped', reason: 'User has DM restrictions (banword found)' });
+      console.log(`[SKIP] У пользователя ограничение на DM (обнаружена точная фраза ограничения)`);
+      skippedAccounts.push({ username, reason: 'restricted_dms_detected_exact_phrase' });
+      return res.json({ status: 'skipped', reason: 'User has DM restrictions (exact ban phrase found)' });
     }
 
     // --- Поле ввода сообщения ---
