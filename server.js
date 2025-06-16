@@ -9,15 +9,6 @@ const randomDelay = (min, max) =>
   new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1)) + min));
 
 const skippedAccounts = [];
-const banWords = [
-  "this account can't receive your message",
-  "they don't allow new message requests from everyone",
-  "not everyone can message this account",
-  "can't message this account",
-  "doesn't allow messages",
-  "can't receive your message",
-  "can't send messages to this account",
-];
 
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
@@ -132,16 +123,24 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // --- Проверка на банворды до ввода сообщения ---
-    const banMatch = await page.evaluate((banWords) => {
-      const textContent = Array.from(document.querySelectorAll('div, span, p')).map(el => el.innerText?.toLowerCase() || '').join(' ');
-      return banWords.find(word => textContent.includes(word));
-    }, banWords);
+    // --- Проверка на банворды после открытия DM ---
+    const dmBlockDetected = await page.evaluate(() => {
+      const banwords = [
+        "this account can't receive your message",
+        "can't receive your message because they don't allow new message requests",
+        "this account isn't available"
+      ];
 
-    if (banMatch) {
-      console.log(`[SKIP] У пользователя ограничение на DM (обнаружен банворд: "${banMatch}")`);
-      skippedAccounts.push({ username, reason: `banword_detected: ${banMatch}` });
-      return res.json({ status: 'skipped', reason: `DM ограничены, найден банворд: ${banMatch}` });
+      return Array.from(document.querySelectorAll('div, span')).some(el => {
+        const text = el.innerText?.trim().toLowerCase();
+        return banwords.some(word => text && text.includes(word));
+      });
+    });
+
+    if (dmBlockDetected) {
+      console.log(`[SKIP] У пользователя ограничение на DM (обнаружен банворд)`);
+      skippedAccounts.push({ username, reason: 'restricted_dms_detected_in_dm' });
+      return res.json({ status: 'skipped', reason: 'User has DM restrictions (banword found)' });
     }
 
     // --- Поле ввода сообщения ---
