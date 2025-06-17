@@ -48,14 +48,14 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(500, 1000);
 
-    // --- Проверка по тексту ---
+    // Проверка текста блокировки DM
     const dmBlockedText = await page.evaluate(() => {
       const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
-      const blockedDiv = document.querySelector('div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x186z157.xk50ysn');
-      return blockedDiv?.innerText.trim() === targetText;
+      const divs = Array.from(document.querySelectorAll('div'));
+      return divs.some(div => div.innerText.trim() === targetText);
     });
 
-    // --- Проверка по иконкам / alt текстам изображений ---
+    // Проверка по изображениям с банвордами в alt
     const dmBlockedImage = await page.evaluate(() => {
       const banAltTexts = ['lock', 'private', 'not allowed', 'restricted', 'block', 'shield', 'no entry'];
       const imgs = Array.from(document.querySelectorAll('img'));
@@ -65,7 +65,7 @@ app.post('/send-dm', async (req, res) => {
       });
     });
 
-    // --- Проверка на текст "This Account is Private" в DOM ---
+    // Проверка на "This Account is Private"
     const isPrivateByText = await page.evaluate(() => {
       return document.body.innerText.includes('This Account is Private');
     });
@@ -81,7 +81,7 @@ app.post('/send-dm', async (req, res) => {
       return res.json({ status: 'skipped', reason: 'User DMs blocked or private' });
     }
 
-    // --- Поиск кнопки Message ---
+    // Поиск кнопки Message
     const buttons = await page.$$('div[role="button"], button');
     let messageButton = null;
 
