@@ -65,89 +65,90 @@ app.post('/send-dm', async (req, res) => {
 
       console.log('[DEBUG] Кнопка:', text, 'aria-label:', ariaLabel, 'title:', title);
 
-      if (
-        textLower.includes('message') ||
-        ariaLower.includes('message') ||
-        titleLower.includes('message')
-      ) {
+      if (textLower === 'message' || ariaLower === 'message' || titleLower === 'message') {
         messageButton = btn;
         break;
       }
-    }
 
-    if (!messageButton) {
-      console.log('[INFO] Попробуем найти альтернативную кнопку через три точки');
-      for (const btn of buttons) {
-        const text = await page.evaluate(el => el.textContent.trim().toLowerCase(), btn).catch(() => '');
-        if (['options', 'more'].includes(text)) {
-          await btn.click();
-          await randomDelay(1000, 1500);
+      if (
+        ['options', 'more'].includes(textLower) ||
+        ['options', 'more'].includes(ariaLower) ||
+        ['options', 'more'].includes(titleLower)
+      ) {
+        console.log('[INFO] Пробуем нажать на три точки (Options / More)');
+        await btn.click();
+        await randomDelay(800, 1200);
 
-          const menuButtons = await page.$$('[role="dialog"] button, [role="menu"] button');
+        const menuSelector = 'div[role="dialog"], div[role="menu"]';
+        await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
 
-          for (const item of menuButtons) {
-            const label = await page.evaluate(el => el.textContent?.toLowerCase() || '', item).catch(() => '');
-            if (label.includes('send message')) {
-              messageButton = item;
-              break;
-            }
+        const menuButtons = await page.$$(`${menuSelector} *`);
+
+        for (const item of menuButtons) {
+          const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
+
+          if (itemText.includes('send message')) {
+            console.log('[INFO] Найдена кнопка "Send message" через резервный способ');
+            messageButton = item;
+            break;
           }
-
-          await page.keyboard.press('Escape');
-          await randomDelay(500, 700);
-          break;
         }
+
+        if (messageButton) break;
+
+        await page.keyboard.press('Escape');
+        await randomDelay(300, 500);
       }
     }
 
     if (!messageButton) {
-      console.log(`[INFO] Кнопка "Message" не найдена, но продолжаем пробовать, вдруг поле всё равно появится`);
-    } else {
-      console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
-      await messageButton.click();
-      await randomDelay(1000, 1500);
+      console.log(`[SKIP] Приватный аккаунт — нет кнопки "Message": ${username}`);
+      skippedAccounts.push({ username, reason: 'no_message_button' });
+      return res.json({ status: 'skipped', reason: 'Приватный аккаунт, сообщение невозможно отправить' });
     }
 
-    // Пытаемся закрыть окно уведомлений
+    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
+    await messageButton.click();
+    await randomDelay(800, 1200);
+
     try {
+      console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
       if (notNowButton) {
-        console.log('[INFO] Закрываем окно "Turn on Notifications"');
+        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButton.click();
-        await randomDelay(500, 700);
+        await randomDelay(500, 800);
       }
-    } catch {
-      console.log('[INFO] Окно уведомлений не появилось');
+    } catch (e) {
+      console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // Ждём появления поля ввода или банворда
-    const dmStatus = await page.waitForFunction(() => {
-      const textarea = document.querySelector('textarea');
-      const editable = document.querySelector('div[contenteditable="true"]');
-      const allTextElements = Array.from(document.querySelectorAll('div, span'));
-      const banText = "this account can't receive your message because they don't allow new message requests from everyone.";
+    // --- Проверка DOM на ошибку DMs ---
+    const dmBlocked = await page.evaluate(() => {
+      const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
+      return Array.from(document.querySelectorAll('div, span')).some(el => el.innerText?.trim() === targetText);
+    });
 
-      const foundBan = allTextElements.some(el => el.innerText?.trim().toLowerCase() === banText);
-      if (foundBan) return 'ban';
-      if (textarea || editable) return 'ok';
-      return null;
-    }, { timeout: 10000 });
-
-    const result = await dmStatus.jsonValue();
-    if (result === 'ban') {
-      console.log('[SKIP] У пользователя ограничения на получение сообщений');
-      skippedAccounts.push({ username, reason: 'dm_restricted' });
-      return res.json({ status: 'skipped', reason: 'User has DM restrictions (ban text shown)' });
+    if (dmBlocked) {
+      console.log(`[SKIP] У пользователя DM закрыты (текст ошибки найден в DOM)`);
+      skippedAccounts.push({ username, reason: 'restricted_dms' });
+      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
     }
 
-    // Найдём поле ввода
-    let inputSelector = null;
+    // --- Поле ввода сообщения ---
+    let inputSelector;
     try {
-      await page.waitForSelector('textarea', { visible: true, timeout: 5000 });
+      await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
       inputSelector = 'textarea';
     } catch {
-      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 5000 });
-      inputSelector = 'div[contenteditable="true"]';
+      try {
+        await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 8000 });
+        inputSelector = 'div[contenteditable="true"]';
+      } catch {
+        console.log(`[SKIP] Поле ввода не найдено: ${username}`);
+        skippedAccounts.push({ username, reason: 'no_input_field' });
+        return res.json({ status: 'skipped', reason: 'No input field — DMs likely restricted' });
+      }
     }
 
     const inputElement = await page.$(inputSelector);
