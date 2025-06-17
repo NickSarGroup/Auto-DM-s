@@ -48,6 +48,29 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(500, 1000);
 
+    // --- Проверка текста в DOM на наличие банвордов ---
+    const blockTextFound = await page.evaluate(() => {
+      const banwords = [
+        "they don't allow new message requests",
+        "can't receive your message",
+        "not accepting message requests",
+        "you can't message this account",
+        "this account can't receive your message",
+      ];
+      const divs = Array.from(document.querySelectorAll('div'));
+      return divs.some(div => {
+        const text = div.innerText?.toLowerCase().trim();
+        return banwords.some(word => text?.includes(word));
+      });
+    });
+
+    if (blockTextFound) {
+      console.log(`[SKIP] У пользователя закрыты DMs (по реальному видимому тексту на странице)`);
+      skippedAccounts.push({ username, reason: 'restricted_dms_text' });
+      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
+    }
+
+    // --- Поиск кнопки Message (как есть) ---
     const buttons = await page.$$('div[role="button"], button');
     let messageButton = null;
 
@@ -95,26 +118,14 @@ app.post('/send-dm', async (req, res) => {
     }
 
     if (!messageButton) {
-      console.log(`[SKIP] Приватный аккаунт — нет кнопки "Message": ${username}`);
+      console.log(`[SKIP] Приватный аккаунт — кнопка "Message" не найдена: ${username}`);
       skippedAccounts.push({ username, reason: 'no_message_button' });
-      return res.json({ status: 'skipped', reason: 'Приватный аккаунт, сообщение невозможно отправить' });
+      return res.json({ status: 'skipped', reason: 'No Message button found (likely private)' });
     }
 
     console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
     await messageButton.click();
     await randomDelay(800, 1200);
-
-    // --- Новая проверка: появился ли текст "can't receive your message" ---
-    const dmBlocked = await page.evaluate(() => {
-      const blockedText = "This account can't receive your message because they don't allow new message requests from everyone.";
-      return Array.from(document.querySelectorAll('div')).some(div => div.textContent.includes(blockedText));
-    });
-
-    if (dmBlocked) {
-      console.log(`[SKIP] У пользователя DM закрыты (текст найден после открытия окна)`);
-      skippedAccounts.push({ username, reason: 'restricted_dms' });
-      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
-    }
 
     try {
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
