@@ -49,6 +49,7 @@ app.post('/send-dm', async (req, res) => {
     await randomDelay(500, 1000);
 
     const buttons = await page.$$('div[role="button"], button');
+
     let messageButton = null;
 
     for (const btn of buttons) {
@@ -64,100 +65,89 @@ app.post('/send-dm', async (req, res) => {
 
       console.log('[DEBUG] Кнопка:', text, 'aria-label:', ariaLabel, 'title:', title);
 
-      if (textLower === 'message' || ariaLower === 'message' || titleLower === 'message') {
+      if (
+        textLower.includes('message') ||
+        ariaLower.includes('message') ||
+        titleLower.includes('message')
+      ) {
         messageButton = btn;
         break;
-      }
-
-      if (
-        ['options', 'more'].includes(textLower) ||
-        ['options', 'more'].includes(ariaLower) ||
-        ['options', 'more'].includes(titleLower)
-      ) {
-        console.log('[INFO] Пробуем нажать на три точки (Options / More)');
-        await btn.click();
-        await randomDelay(800, 1200);
-
-        const menuSelector = 'div[role="dialog"], div[role="menu"]';
-        await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
-
-        const menuButtons = await page.$$(`${menuSelector} *`);
-
-        for (const item of menuButtons) {
-          const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
-
-          if (itemText.includes('send message')) {
-            console.log('[INFO] Найдена кнопка "Send message" через резервный способ');
-            messageButton = item;
-            break;
-          }
-        }
-
-        if (messageButton) break;
-
-        await page.keyboard.press('Escape');
-        await randomDelay(300, 500);
       }
     }
 
     if (!messageButton) {
-      console.log(`[SKIP] Приватный аккаунт — нет кнопки "Message": ${username}`);
-      skippedAccounts.push({ username, reason: 'no_message_button' });
-      return res.json({ status: 'skipped', reason: 'Приватный аккаунт, сообщение невозможно отправить' });
-    }
+      console.log('[INFO] Попробуем найти альтернативную кнопку через три точки');
+      for (const btn of buttons) {
+        const text = await page.evaluate(el => el.textContent.trim().toLowerCase(), btn).catch(() => '');
+        if (['options', 'more'].includes(text)) {
+          await btn.click();
+          await randomDelay(1000, 1500);
 
-    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
-    await messageButton.click();
-    await randomDelay(800, 1200);
+          const menuButtons = await page.$$('[role="dialog"] button, [role="menu"] button');
 
-    try {
-      console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
-      const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
-      if (notNowButton) {
-        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
-        await notNowButton.click();
-        await randomDelay(500, 800);
-      }
-    } catch (e) {
-      console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
-    }
+          for (const item of menuButtons) {
+            const label = await page.evaluate(el => el.textContent?.toLowerCase() || '', item).catch(() => '');
+            if (label.includes('send message')) {
+              messageButton = item;
+              break;
+            }
+          }
 
-    // --- Проверка на банворды в видимых DOM-элементах ---
-    const dmBlockDetected = await page.evaluate(() => {
-      const banMarker = "this account can't receive your message";
-
-      const elements = Array.from(document.querySelectorAll('div, span'));
-      for (const el of elements) {
-        const style = window.getComputedStyle(el);
-        const isVisible = style && style.display !== 'none' && style.visibility !== 'hidden' && el.offsetParent !== null;
-        const text = el.innerText?.trim().toLowerCase();
-        if (isVisible && text && text.includes(banMarker)) {
-          return true;
+          await page.keyboard.press('Escape');
+          await randomDelay(500, 700);
+          break;
         }
       }
-      return false;
-    });
-
-    if (dmBlockDetected) {
-      console.log(`[SKIP] У пользователя ограничение на DM (обнаружен видимый банворд)`);
-      skippedAccounts.push({ username, reason: 'restricted_dms_detected_visible_phrase' });
-      return res.json({ status: 'skipped', reason: 'User has DM restrictions (visible ban phrase found)' });
     }
 
-    // --- Поле ввода сообщения ---
-    let inputSelector;
+    if (!messageButton) {
+      console.log(`[INFO] Кнопка "Message" не найдена, но продолжаем пробовать, вдруг поле всё равно появится`);
+    } else {
+      console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
+      await messageButton.click();
+      await randomDelay(1000, 1500);
+    }
+
+    // Пытаемся закрыть окно уведомлений
     try {
-      await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
+      const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
+      if (notNowButton) {
+        console.log('[INFO] Закрываем окно "Turn on Notifications"');
+        await notNowButton.click();
+        await randomDelay(500, 700);
+      }
+    } catch {
+      console.log('[INFO] Окно уведомлений не появилось');
+    }
+
+    // Ждём появления поля ввода или банворда
+    const dmStatus = await page.waitForFunction(() => {
+      const textarea = document.querySelector('textarea');
+      const editable = document.querySelector('div[contenteditable="true"]');
+      const allTextElements = Array.from(document.querySelectorAll('div, span'));
+      const banText = "this account can't receive your message because they don't allow new message requests from everyone.";
+
+      const foundBan = allTextElements.some(el => el.innerText?.trim().toLowerCase() === banText);
+      if (foundBan) return 'ban';
+      if (textarea || editable) return 'ok';
+      return null;
+    }, { timeout: 10000 });
+
+    const result = await dmStatus.jsonValue();
+    if (result === 'ban') {
+      console.log('[SKIP] У пользователя ограничения на получение сообщений');
+      skippedAccounts.push({ username, reason: 'dm_restricted' });
+      return res.json({ status: 'skipped', reason: 'User has DM restrictions (ban text shown)' });
+    }
+
+    // Найдём поле ввода
+    let inputSelector = null;
+    try {
+      await page.waitForSelector('textarea', { visible: true, timeout: 5000 });
       inputSelector = 'textarea';
     } catch {
-      try {
-        await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 8000 });
-        inputSelector = 'div[contenteditable="true"]';
-      } catch {
-        console.log(`[SKIP] Поле ввода не найдено: ${username}`);
-        skippedAccounts.push({ username, reason: 'no_input_field' });
-        return res.json({ status: 'skipped', reason: 'No input field — DMs likely restricted' });
-      }
+      await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 5000 });
+      inputSelector = 'div[contenteditable="true"]';
     }
 
     const inputElement = await page.$(inputSelector);
