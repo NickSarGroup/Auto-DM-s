@@ -10,6 +10,8 @@ const randomDelay = (min, max) =>
 
 const skippedAccounts = [];
 
+const bannedWords = ['porn', 'onlyfans', 'xxx', 'sex', 'nsfw', 'fuck', 'slut', 'whore', 'dick', 'bitch'];
+
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
 
@@ -47,6 +49,22 @@ app.post('/send-dm', async (req, res) => {
     console.log('[INFO] Страница пользователя загружена');
 
     await randomDelay(500, 1000);
+
+    // --- Проверка банвордов в отображаемом тексте страницы ---
+    const domText = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('body *'))
+        .map(el => el.innerText)
+        .filter(text => text && text.trim().length > 0)
+        .join(' ')
+        .toLowerCase();
+    });
+
+    const hasBannedWord = bannedWords.some(word => domText.includes(word));
+    if (hasBannedWord) {
+      console.log(`[SKIP] Найден запрещённый контент на странице профиля: ${username}`);
+      skippedAccounts.push({ username, reason: 'banned_word_in_profile' });
+      return res.json({ status: 'skipped', reason: 'Профиль содержит запрещённый контент' });
+    }
 
     const buttons = await page.$$('div[role="button"], button');
     let messageButton = null;
@@ -136,7 +154,7 @@ app.post('/send-dm', async (req, res) => {
       }
     }
 
-    // --- Точная проверка: только видимый текст, реально отображающийся в чате ---
+    // --- Проверка на текст ошибки о закрытых DMs ---
     const dmBlocked = await page.evaluate(() => {
       const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
       const elements = Array.from(document.querySelectorAll('div, span'));
