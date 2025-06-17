@@ -48,14 +48,13 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(500, 1000);
 
-    // Проверка текста блокировки DM
+    // --- Проверка на блокировку сообщений или приватный акк ---
     const dmBlockedText = await page.evaluate(() => {
       const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
-      const divs = Array.from(document.querySelectorAll('div'));
-      return divs.some(div => div.innerText.trim() === targetText);
+      const blockedDiv = document.querySelector('div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x186z157.xk50ysn');
+      return blockedDiv?.innerText.trim() === targetText;
     });
 
-    // Проверка по изображениям с банвордами в alt
     const dmBlockedImage = await page.evaluate(() => {
       const banAltTexts = ['lock', 'private', 'not allowed', 'restricted', 'block', 'shield', 'no entry'];
       const imgs = Array.from(document.querySelectorAll('img'));
@@ -65,7 +64,6 @@ app.post('/send-dm', async (req, res) => {
       });
     });
 
-    // Проверка на "This Account is Private"
     const isPrivateByText = await page.evaluate(() => {
       return document.body.innerText.includes('This Account is Private');
     });
@@ -81,63 +79,60 @@ app.post('/send-dm', async (req, res) => {
       return res.json({ status: 'skipped', reason: 'User DMs blocked or private' });
     }
 
-    // Поиск кнопки Message
-    const buttons = await page.$$('div[role="button"], button');
+    // --- Поиск кнопки Message или Send Message ---
     let messageButton = null;
 
-    for (const btn of buttons) {
-      const [text, ariaLabel, title] = await Promise.all([
-        page.evaluate(el => el.textContent.trim(), btn).catch(() => ''),
-        page.evaluate(el => el.getAttribute('aria-label') || '', btn).catch(() => ''),
-        page.evaluate(el => el.getAttribute('title') || '', btn).catch(() => ''),
-      ]);
+    const findMessageButton = async () => {
+      const buttons = await page.$$('div[role="button"], button');
 
-      const textLower = text.toLowerCase();
-      const ariaLower = ariaLabel.toLowerCase();
-      const titleLower = title.toLowerCase();
+      for (const btn of buttons) {
+        const [text, ariaLabel, title] = await Promise.all([
+          page.evaluate(el => el.textContent.trim(), btn).catch(() => ''),
+          page.evaluate(el => el.getAttribute('aria-label') || '', btn).catch(() => ''),
+          page.evaluate(el => el.getAttribute('title') || '', btn).catch(() => ''),
+        ]);
 
-      if (textLower === 'message' || ariaLower === 'message' || titleLower === 'message') {
-        messageButton = btn;
-        break;
-      }
+        const lowerText = (text + ariaLabel + title).toLowerCase();
 
-      if (
-        ['options', 'more'].includes(textLower) ||
-        ['options', 'more'].includes(ariaLower) ||
-        ['options', 'more'].includes(titleLower)
-      ) {
-        await btn.click();
-        await randomDelay(800, 1200);
-
-        const menuSelector = 'div[role="dialog"], div[role="menu"]';
-        await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
-
-        const menuButtons = await page.$$(`${menuSelector} *`);
-        for (const item of menuButtons) {
-          const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
-          if (itemText.includes('send message')) {
-            messageButton = item;
-            break;
-          }
+        if (lowerText.includes('message')) {
+          return btn;
         }
 
-        if (messageButton) break;
+        if (['options', 'more'].some(opt => lowerText.includes(opt))) {
+          await btn.click();
+          await randomDelay(800, 1200);
 
-        await page.keyboard.press('Escape');
-        await randomDelay(300, 500);
+          const menuSelector = 'div[role="dialog"], div[role="menu"]';
+          await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
+
+          const menuButtons = await page.$$(`${menuSelector} *`);
+          for (const item of menuButtons) {
+            const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
+            if (itemText.includes('send message')) {
+              return item;
+            }
+          }
+
+          await page.keyboard.press('Escape');
+          await randomDelay(300, 500);
+        }
       }
+      return null;
+    };
+
+    messageButton = await findMessageButton();
+
+    if (messageButton) {
+      console.log('[INFO] Кнопка "Message" или "Send message" найдена, кликаем');
+      await messageButton.click();
+      await randomDelay(800, 1200);
+    } else {
+      console.log(`[SKIP] Не удалось найти кнопку "Message" или "Send message": ${username}`);
+      skippedAccounts.push({ username, reason: 'no_message_or_send_message_button' });
+      return res.json({ status: 'skipped', reason: 'Cannot open DM — no button found' });
     }
 
-    if (!messageButton) {
-      console.log(`[SKIP] Приватный аккаунт — нет кнопки "Message": ${username}`);
-      skippedAccounts.push({ username, reason: 'no_message_button' });
-      return res.json({ status: 'skipped', reason: 'Приватный аккаунт, сообщение невозможно отправить' });
-    }
-
-    console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
-    await messageButton.click();
-    await randomDelay(800, 1200);
-
+    // --- Закрытие "Not Now" при открытии чата ---
     try {
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
       if (notNowButton) {
@@ -146,6 +141,7 @@ app.post('/send-dm', async (req, res) => {
       }
     } catch (e) {}
 
+    // --- Поиск поля ввода и отправка сообщения ---
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
