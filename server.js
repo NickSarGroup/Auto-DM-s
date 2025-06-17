@@ -48,29 +48,40 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(500, 1000);
 
-    // --- Проверка текста в DOM на наличие банвордов ---
-    const blockTextFound = await page.evaluate(() => {
-      const banwords = [
-        "they don't allow new message requests",
-        "can't receive your message",
-        "not accepting message requests",
-        "you can't message this account",
-        "this account can't receive your message",
-      ];
-      const divs = Array.from(document.querySelectorAll('div'));
-      return divs.some(div => {
-        const text = div.innerText?.toLowerCase().trim();
-        return banwords.some(word => text?.includes(word));
+    // --- Проверка по тексту ---
+    const dmBlockedText = await page.evaluate(() => {
+      const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
+      const blockedDiv = document.querySelector('div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x186z157.xk50ysn');
+      return blockedDiv?.innerText.trim() === targetText;
+    });
+
+    // --- Проверка по иконкам / alt текстам изображений ---
+    const dmBlockedImage = await page.evaluate(() => {
+      const banAltTexts = ['lock', 'private', 'not allowed', 'restricted', 'block', 'shield', 'no entry'];
+      const imgs = Array.from(document.querySelectorAll('img'));
+      return imgs.some(img => {
+        const alt = img.alt?.toLowerCase() || '';
+        return banAltTexts.some(word => alt.includes(word));
       });
     });
 
-    if (blockTextFound) {
-      console.log(`[SKIP] У пользователя закрыты DMs (по реальному видимому тексту на странице)`);
-      skippedAccounts.push({ username, reason: 'restricted_dms_text' });
-      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
+    // --- Проверка на текст "This Account is Private" в DOM ---
+    const isPrivateByText = await page.evaluate(() => {
+      return document.body.innerText.includes('This Account is Private');
+    });
+
+    if (dmBlockedText || dmBlockedImage || isPrivateByText) {
+      console.log(`[SKIP] DM заблокированы (по тексту или изображениям): ${username}`);
+      skippedAccounts.push({
+        username,
+        reason: dmBlockedText ? 'restricted_dms_text' :
+                dmBlockedImage ? 'restricted_dms_image' :
+                'private_account_text'
+      });
+      return res.json({ status: 'skipped', reason: 'User DMs blocked or private' });
     }
 
-    // --- Поиск кнопки Message (как есть) ---
+    // --- Поиск кнопки Message ---
     const buttons = await page.$$('div[role="button"], button');
     let messageButton = null;
 
@@ -118,9 +129,9 @@ app.post('/send-dm', async (req, res) => {
     }
 
     if (!messageButton) {
-      console.log(`[SKIP] Приватный аккаунт — кнопка "Message" не найдена: ${username}`);
+      console.log(`[SKIP] Приватный аккаунт — нет кнопки "Message": ${username}`);
       skippedAccounts.push({ username, reason: 'no_message_button' });
-      return res.json({ status: 'skipped', reason: 'No Message button found (likely private)' });
+      return res.json({ status: 'skipped', reason: 'Приватный аккаунт, сообщение невозможно отправить' });
     }
 
     console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
