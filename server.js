@@ -48,20 +48,6 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(500, 1000);
 
-    // --- Проверка на наличие текста об ограниченных DMs ---
-    const dmBlocked = await page.evaluate(() => {
-      const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
-      const blockedDiv = document.querySelector('div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x186z157.xk50ysn');
-      return blockedDiv?.innerText.trim() === targetText;
-    });
-
-    if (dmBlocked) {
-      console.log(`[SKIP] У пользователя DM закрыты (реально видимый текст ошибки найден в DOM)`);
-      skippedAccounts.push({ username, reason: 'restricted_dms' });
-      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
-    }
-
-    // --- Поиск кнопки Message (оставлено как есть) ---
     const buttons = await page.$$('div[role="button"], button');
     let messageButton = null;
 
@@ -117,6 +103,18 @@ app.post('/send-dm', async (req, res) => {
     console.log('[INFO] Кнопка "Message" найдена, кликаем по ней');
     await messageButton.click();
     await randomDelay(800, 1200);
+
+    // --- Новая проверка: появился ли текст "can't receive your message" ---
+    const dmBlocked = await page.evaluate(() => {
+      const blockedText = "This account can't receive your message because they don't allow new message requests from everyone.";
+      return Array.from(document.querySelectorAll('div')).some(div => div.textContent.includes(blockedText));
+    });
+
+    if (dmBlocked) {
+      console.log(`[SKIP] У пользователя DM закрыты (текст найден после открытия окна)`);
+      skippedAccounts.push({ username, reason: 'restricted_dms' });
+      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
+    }
 
     try {
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
