@@ -83,7 +83,9 @@ app.post('/send-dm', async (req, res) => {
 
       console.log('[DEBUG] Кнопка:', text, 'aria-label:', ariaLabel, 'title:', title);
 
-      if (textLower === 'message' || ariaLower === 'message' || titleLower === 'message') {
+      if (['message', 'send message'].includes(textLower) ||
+          ['message', 'send message'].includes(ariaLower) ||
+          ['message', 'send message'].includes(titleLower)) {
         messageButton = btn;
         break;
       }
@@ -128,14 +130,13 @@ app.post('/send-dm', async (req, res) => {
     await randomDelay(800, 1200);
 
     try {
-      console.log('[INFO] Ждём появления окна "Turn on notifications" с кнопкой "Not Now"...');
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
       if (notNowButton) {
         console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButton.click();
         await randomDelay(500, 800);
       }
-    } catch (e) {
+    } catch {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
@@ -155,7 +156,7 @@ app.post('/send-dm', async (req, res) => {
       }
     }
 
-    // --- Проверка на текст ошибки о закрытых DMs по конкретному селектору ---
+    // --- Проверка на сообщение об ограниченных DMs ---
     const dmBlocked = await page.evaluate(() => {
       const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
       const blockedDiv = document.querySelector('div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x186z157.xk50ysn');
