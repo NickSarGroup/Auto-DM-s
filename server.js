@@ -10,8 +10,6 @@ const randomDelay = (min, max) =>
 
 const skippedAccounts = [];
 
-const bannedWords = ['porn', 'onlyfans', 'xxx', 'sex', 'nsfw', 'fuck', 'slut', 'whore', 'dick', 'bitch'];
-
 app.post('/send-dm', async (req, res) => {
   const { username, message } = req.body;
 
@@ -50,23 +48,20 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(500, 1000);
 
-    // --- Проверка банвордов в отображаемом тексте страницы ---
-    const domText = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('body *'))
-        .map(el => el.innerText)
-        .filter(text => text && text.trim().length > 0)
-        .join(' ')
-        .toLowerCase();
+    // --- Проверка на наличие текста об ограниченных DMs ---
+    const dmBlocked = await page.evaluate(() => {
+      const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
+      const blockedDiv = document.querySelector('div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x186z157.xk50ysn');
+      return blockedDiv?.innerText.trim() === targetText;
     });
 
-    const hasBannedWord = bannedWords.some(word => domText.includes(word));
-    if (hasBannedWord) {
-      console.log(`[SKIP] Найден запрещённый контент на странице профиля: ${username}`);
-      skippedAccounts.push({ username, reason: 'banned_word_in_profile' });
-      return res.json({ status: 'skipped', reason: 'Профиль содержит запрещённый контент' });
+    if (dmBlocked) {
+      console.log(`[SKIP] У пользователя DM закрыты (реально видимый текст ошибки найден в DOM)`);
+      skippedAccounts.push({ username, reason: 'restricted_dms' });
+      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
     }
 
-    // --- Поиск кнопки Message по разным вариантам ---
+    // --- Поиск кнопки Message (оставлено как есть) ---
     const buttons = await page.$$('div[role="button"], button');
     let messageButton = null;
 
@@ -81,11 +76,7 @@ app.post('/send-dm', async (req, res) => {
       const ariaLower = ariaLabel.toLowerCase();
       const titleLower = title.toLowerCase();
 
-      console.log('[DEBUG] Кнопка:', text, 'aria-label:', ariaLabel, 'title:', title);
-
-      if (['message', 'send message'].includes(textLower) ||
-          ['message', 'send message'].includes(ariaLower) ||
-          ['message', 'send message'].includes(titleLower)) {
+      if (textLower === 'message' || ariaLower === 'message' || titleLower === 'message') {
         messageButton = btn;
         break;
       }
@@ -95,7 +86,6 @@ app.post('/send-dm', async (req, res) => {
         ['options', 'more'].includes(ariaLower) ||
         ['options', 'more'].includes(titleLower)
       ) {
-        console.log('[INFO] Пробуем нажать на три точки (Options / More)');
         await btn.click();
         await randomDelay(800, 1200);
 
@@ -106,7 +96,6 @@ app.post('/send-dm', async (req, res) => {
         for (const item of menuButtons) {
           const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
           if (itemText.includes('send message')) {
-            console.log('[INFO] Найдена кнопка "Send message" через резервный способ');
             messageButton = item;
             break;
           }
@@ -132,15 +121,11 @@ app.post('/send-dm', async (req, res) => {
     try {
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
       if (notNowButton) {
-        console.log('[INFO] Кнопка "Not Now" найдена, нажимаем');
         await notNowButton.click();
         await randomDelay(500, 800);
       }
-    } catch {
-      console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
-    }
+    } catch (e) {}
 
-    // --- Поле ввода сообщения ---
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
@@ -154,19 +139,6 @@ app.post('/send-dm', async (req, res) => {
         skippedAccounts.push({ username, reason: 'no_input_field' });
         return res.json({ status: 'skipped', reason: 'No input field — DMs likely restricted' });
       }
-    }
-
-    // --- Проверка на сообщение об ограниченных DMs ---
-    const dmBlocked = await page.evaluate(() => {
-      const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
-      const blockedDiv = document.querySelector('div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x186z157.xk50ysn');
-      return blockedDiv?.innerText.trim() === targetText;
-    });
-
-    if (dmBlocked) {
-      console.log(`[SKIP] У пользователя DM закрыты (реально видимый текст ошибки найден в DOM)`);
-      skippedAccounts.push({ username, reason: 'restricted_dms' });
-      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
     }
 
     const inputElement = await page.$(inputSelector);
