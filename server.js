@@ -49,7 +49,6 @@ app.post('/send-dm', async (req, res) => {
     await randomDelay(500, 1000);
 
     const buttons = await page.$$('div[role="button"], button');
-
     let messageButton = null;
 
     for (const btn of buttons) {
@@ -83,10 +82,8 @@ app.post('/send-dm', async (req, res) => {
         await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
 
         const menuButtons = await page.$$(`${menuSelector} *`);
-
         for (const item of menuButtons) {
           const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
-
           if (itemText.includes('send message')) {
             console.log('[INFO] Найдена кнопка "Send message" через резервный способ');
             messageButton = item;
@@ -95,7 +92,6 @@ app.post('/send-dm', async (req, res) => {
         }
 
         if (messageButton) break;
-
         await page.keyboard.press('Escape');
         await randomDelay(300, 500);
       }
@@ -123,26 +119,21 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // --- Новый способ проверки банвордов ---
-    await randomDelay(1500, 2500); // Ждём, чтобы банворды успели прогрузиться
-
+    // --- Проверка банворда только по видимым элементам ---
     const dmBlockDetected = await page.evaluate(() => {
-      const banwords = [
-        "this account can't receive your message",
-        "can't receive your message because they don't allow new message requests",
-        "this account isn't available",
-        "you can't message this account",
-        "you can't send messages to this account"
-      ];
-
-      const bodyText = document.body.innerText?.toLowerCase() || '';
-      return banwords.find(word => bodyText.includes(word)) || null;
+      const banPhrase = "this account can't receive your message because they don't allow new message requests from everyone.";
+      return Array.from(document.querySelectorAll('div, span')).some(el => {
+        const style = window.getComputedStyle(el);
+        const visible = style && style.display !== 'none' && style.visibility !== 'hidden' && el.offsetParent !== null;
+        const text = el.innerText?.trim().toLowerCase();
+        return visible && text === banPhrase;
+      });
     });
 
     if (dmBlockDetected) {
-      console.log(`[SKIP] Ограничение на DM: обнаружен банворд — "${dmBlockDetected}"`);
-      skippedAccounts.push({ username, reason: `restricted_dms_found: "${dmBlockDetected}"` });
-      return res.json({ status: 'skipped', reason: `User has DM restrictions: "${dmBlockDetected}"` });
+      console.log(`[SKIP] У пользователя ограничение на DM (визуально отрисованный банворд)`);
+      skippedAccounts.push({ username, reason: 'restricted_dms_detected_visible_banword' });
+      return res.json({ status: 'skipped', reason: 'User has DM restrictions (visible ban phrase found)' });
     }
 
     // --- Поле ввода сообщения ---
