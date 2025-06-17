@@ -123,22 +123,26 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // --- Проверка на банворды после открытия DM ---
+    // --- Новый способ проверки банвордов ---
+    await randomDelay(1500, 2500); // Ждём, чтобы банворды успели прогрузиться
+
     const dmBlockDetected = await page.evaluate(() => {
-      const exactBanPhrases = [
-        "this account can't receive your message because they don't allow new message requests from everyone."
+      const banwords = [
+        "this account can't receive your message",
+        "can't receive your message because they don't allow new message requests",
+        "this account isn't available",
+        "you can't message this account",
+        "you can't send messages to this account"
       ];
 
-      return Array.from(document.querySelectorAll('div, span')).some(el => {
-        const text = el.innerText?.trim().toLowerCase();
-        return exactBanPhrases.some(phrase => text === phrase);
-      });
+      const bodyText = document.body.innerText?.toLowerCase() || '';
+      return banwords.find(word => bodyText.includes(word)) || null;
     });
 
     if (dmBlockDetected) {
-      console.log(`[SKIP] У пользователя ограничение на DM (обнаружена точная фраза ограничения)`);
-      skippedAccounts.push({ username, reason: 'restricted_dms_detected_exact_phrase' });
-      return res.json({ status: 'skipped', reason: 'User has DM restrictions (exact ban phrase found)' });
+      console.log(`[SKIP] Ограничение на DM: обнаружен банворд — "${dmBlockDetected}"`);
+      skippedAccounts.push({ username, reason: `restricted_dms_found: "${dmBlockDetected}"` });
+      return res.json({ status: 'skipped', reason: `User has DM restrictions: "${dmBlockDetected}"` });
     }
 
     // --- Поле ввода сообщения ---
