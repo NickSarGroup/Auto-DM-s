@@ -66,6 +66,7 @@ app.post('/send-dm', async (req, res) => {
       return res.json({ status: 'skipped', reason: 'Профиль содержит запрещённый контент' });
     }
 
+    // --- Поиск кнопки Message по разным вариантам ---
     const buttons = await page.$$('div[role="button"], button');
     let messageButton = null;
 
@@ -154,14 +155,11 @@ app.post('/send-dm', async (req, res) => {
       }
     }
 
-    // --- Проверка на текст ошибки о закрытых DMs ---
+    // --- Проверка на текст ошибки о закрытых DMs по конкретному селектору ---
     const dmBlocked = await page.evaluate(() => {
       const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
-      const elements = Array.from(document.querySelectorAll('div, span'));
-      return elements.some(el => {
-        const style = window.getComputedStyle(el);
-        return el.innerText?.trim() === targetText && style?.display !== 'none' && style?.visibility !== 'hidden' && el.offsetHeight > 0;
-      });
+      const blockedDiv = document.querySelector('div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x186z157.xk50ysn');
+      return blockedDiv?.innerText.trim() === targetText;
     });
 
     if (dmBlocked) {
