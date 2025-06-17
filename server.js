@@ -48,7 +48,6 @@ app.post('/send-dm', async (req, res) => {
 
     await randomDelay(500, 1000);
 
-    // --- Проверка на блокировку сообщений или приватный акк ---
     const dmBlockedText = await page.evaluate(() => {
       const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
       const blockedDiv = document.querySelector('div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x186z157.xk50ysn');
@@ -79,7 +78,7 @@ app.post('/send-dm', async (req, res) => {
       return res.json({ status: 'skipped', reason: 'User DMs blocked or private' });
     }
 
-    // --- Поиск кнопки Message или Send Message ---
+    // --- Поиск кнопки "Message" ---
     let messageButton = null;
 
     const findMessageButton = async () => {
@@ -132,7 +131,7 @@ app.post('/send-dm', async (req, res) => {
       return res.json({ status: 'skipped', reason: 'Cannot open DM — no button found' });
     }
 
-    // --- Закрытие "Not Now" при открытии чата ---
+    // Закрытие возможного "Not Now"
     try {
       const notNowButton = await page.waitForSelector('button._a9--._ap36._a9_1', { timeout: 5000 });
       if (notNowButton) {
@@ -141,25 +140,25 @@ app.post('/send-dm', async (req, res) => {
       }
     } catch (e) {}
 
-    // --- Визуальный анализ: проверка на блокирующее сообщение над полем ---
-    const hasRestrictedMessageWarning = await page.evaluate(() => {
-      const warningText = "This account can't receive your message because they don't allow new message requests from everyone.";
-      const elements = Array.from(document.querySelectorAll('div, span, p')).filter(el =>
-        el.innerText?.includes(warningText)
-      );
-      return elements.some(el => {
-        const rect = el.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
+    // --- Проверка на ограничение сообщений прямо в чате ---
+    const warningInChat = await page.evaluate(() => {
+      const warningKeywords = ['don\'t allow', 'not receiving', 'can\'t receive', 'blocked'];
+      const blocks = Array.from(document.querySelectorAll('div, span, p')).filter(el => el.innerText);
+      return blocks.some(el => {
+        const text = el.innerText.toLowerCase();
+        return warningKeywords.some(k => text.includes(k)) &&
+               el.getBoundingClientRect().height > 0 &&
+               el.getBoundingClientRect().width > 0;
       });
     });
 
-    if (hasRestrictedMessageWarning) {
-      console.log(`[SKIP] Пользователь ограничил приём сообщений (визуально): ${username}`);
-      skippedAccounts.push({ username, reason: 'restricted_dms_warning_visible' });
-      return res.json({ status: 'skipped', reason: 'User DMs visually restricted' });
+    if (warningInChat) {
+      console.log(`[SKIP] В чате над полем отображается предупреждение: ${username}`);
+      skippedAccounts.push({ username, reason: 'restricted_chat_overlay' });
+      return res.json({ status: 'skipped', reason: 'User chat overlay says DMs blocked' });
     }
 
-    // --- Поиск поля ввода и отправка сообщения ---
+    // --- Поиск поля ввода ---
     let inputSelector;
     try {
       await page.waitForSelector('textarea', { visible: true, timeout: 8000 });
@@ -169,12 +168,13 @@ app.post('/send-dm', async (req, res) => {
         await page.waitForSelector('div[contenteditable="true"]', { visible: true, timeout: 8000 });
         inputSelector = 'div[contenteditable="true"]';
       } catch {
-        console.log(`[SKIP] Поле ввода не найдено: ${username}`);
-        skippedAccounts.push({ username, reason: 'no_input_field' });
-        return res.json({ status: 'skipped', reason: 'No input field — DMs likely restricted' });
+        console.log(`[SKIP] Поле ввода не найдено после открытия чата: ${username}`);
+        skippedAccounts.push({ username, reason: 'no_input_field_after_chat_open' });
+        return res.json({ status: 'skipped', reason: 'No input field after chat opened' });
       }
     }
 
+    // --- Отправка сообщения ---
     const inputElement = await page.$(inputSelector);
     await inputElement.focus();
 
