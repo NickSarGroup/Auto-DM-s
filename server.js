@@ -49,7 +49,6 @@ app.post('/send-dm', async (req, res) => {
     await randomDelay(500, 1000);
 
     const buttons = await page.$$('div[role="button"], button');
-
     let messageButton = null;
 
     for (const btn of buttons) {
@@ -83,10 +82,8 @@ app.post('/send-dm', async (req, res) => {
         await page.waitForSelector(menuSelector, { timeout: 3000 }).catch(() => {});
 
         const menuButtons = await page.$$(`${menuSelector} *`);
-
         for (const item of menuButtons) {
           const itemText = await page.evaluate(el => el.innerText?.trim().toLowerCase() || '', item).catch(() => '');
-
           if (itemText.includes('send message')) {
             console.log('[INFO] Найдена кнопка "Send message" через резервный способ');
             messageButton = item;
@@ -123,18 +120,6 @@ app.post('/send-dm', async (req, res) => {
       console.log('[INFO] Окно "Turn on notifications" не появилось — продолжаем');
     }
 
-    // --- Проверка DOM на ошибку DMs ---
-    const dmBlocked = await page.evaluate(() => {
-      const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
-      return Array.from(document.querySelectorAll('div, span')).some(el => el.innerText?.trim() === targetText);
-    });
-
-    if (dmBlocked) {
-      console.log(`[SKIP] У пользователя DM закрыты (текст ошибки найден в DOM)`);
-      skippedAccounts.push({ username, reason: 'restricted_dms' });
-      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
-    }
-
     // --- Поле ввода сообщения ---
     let inputSelector;
     try {
@@ -149,6 +134,22 @@ app.post('/send-dm', async (req, res) => {
         skippedAccounts.push({ username, reason: 'no_input_field' });
         return res.json({ status: 'skipped', reason: 'No input field — DMs likely restricted' });
       }
+    }
+
+    // --- Точная проверка: только видимый текст, реально отображающийся в чате ---
+    const dmBlocked = await page.evaluate(() => {
+      const targetText = "This account can't receive your message because they don't allow new message requests from everyone.";
+      const elements = Array.from(document.querySelectorAll('div, span'));
+      return elements.some(el => {
+        const style = window.getComputedStyle(el);
+        return el.innerText?.trim() === targetText && style?.display !== 'none' && style?.visibility !== 'hidden' && el.offsetHeight > 0;
+      });
+    });
+
+    if (dmBlocked) {
+      console.log(`[SKIP] У пользователя DM закрыты (реально видимый текст ошибки найден в DOM)`);
+      skippedAccounts.push({ username, reason: 'restricted_dms' });
+      return res.json({ status: 'skipped', reason: 'User restricted DMs' });
     }
 
     const inputElement = await page.$(inputSelector);
