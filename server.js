@@ -141,6 +141,24 @@ app.post('/send-dm', async (req, res) => {
       }
     } catch (e) {}
 
+    // --- Визуальный анализ: проверка на блокирующее сообщение над полем ---
+    const hasRestrictedMessageWarning = await page.evaluate(() => {
+      const warningText = "This account can't receive your message because they don't allow new message requests from everyone.";
+      const elements = Array.from(document.querySelectorAll('div, span, p')).filter(el =>
+        el.innerText?.includes(warningText)
+      );
+      return elements.some(el => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+    });
+
+    if (hasRestrictedMessageWarning) {
+      console.log(`[SKIP] Пользователь ограничил приём сообщений (визуально): ${username}`);
+      skippedAccounts.push({ username, reason: 'restricted_dms_warning_visible' });
+      return res.json({ status: 'skipped', reason: 'User DMs visually restricted' });
+    }
+
     // --- Поиск поля ввода и отправка сообщения ---
     let inputSelector;
     try {
